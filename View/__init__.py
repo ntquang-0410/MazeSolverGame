@@ -1,13 +1,17 @@
+from pygame.examples.moveit import HEIGHT
+
+from View.node_cell import Node_Cell
+
 import pygame as pg
 
-WIDTH_VIEW = 700
-HEIGT_VIEW = 700
+WIDTH_VIEW = 1000
+HEIGHT_VIEW = 700
 
 class View:
     def __init__(self, width, height):
         pg.init()
         self.screen = pg.display.set_mode((width, height))
-        pg.display.set_caption("MVC Pattern Example")
+        pg.display.set_caption("MAZE SOLVER GAME")
         self.clock = pg.time.Clock()
         self.font = pg.font.SysFont(None, 36)
 
@@ -27,7 +31,7 @@ class View:
 
 
 if __name__ == "__main__":
-    view = View(WIDTH_VIEW, HEIGT_VIEW)
+    view = View(WIDTH_VIEW, HEIGHT_VIEW)
     running = True
     while running:
         for event in pg.event.get():
@@ -35,6 +39,6 @@ if __name__ == "__main__":
                 running = False
 
         view.clear()
-        view.draw_text("Hello, MVC!", 50, 100)
+        view.draw_text("Hello, MVC!", 0, 0)
         view.update()
     view.quit()
