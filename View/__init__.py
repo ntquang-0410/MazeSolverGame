@@ -1,9 +1,7 @@
-import Model
-import Controller
 import pygame as pg
 
-WIDTH_VIEW = 250
-HEIGT_VIEW = 250
+WIDTH_VIEW = 700
+HEIGT_VIEW = 700
 
 class View:
     def __init__(self, width, height):
@@ -30,3 +28,13 @@ class View:
 
 if __name__ == "__main__":
     view = View(WIDTH_VIEW, HEIGT_VIEW)
+    running = True
+    while running:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                running = False
+
+        view.clear()
+        view.draw_text("Hello, MVC!", 50, 100)
+        view.update()
+    view.quit()
