@@ -2,8 +2,8 @@ import random
 import heapq
 import time
 from collections import deque
-from typing import List, Tuple, Optional, Dict, Set
-from node_cell import Node_Cell
+from typing import List, Tuple, Optional, Dict
+from Model.node_cell import Node_Cell
 
 # Generation Algorithms: DFS, Kruskal, Binary Tree, Wilson, Recursive Division
 # Solving Algorithms: BFS, DFS, UCS, A*, Bidirectional Search

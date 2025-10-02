@@ -1,5 +1,5 @@
 import os, sys, math, random, pygame, time
-
+import Model
 GAME_TITLE = "Monkey's Treasure"
 FULLSCREEN = False
 RIGHT_PANEL_W = 360
