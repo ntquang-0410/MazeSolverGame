@@ -20,7 +20,7 @@ class GenerationModel:
         self.maze_width = maze_width
         self.maze_height = maze_height
         self.Algorithm = Algorithm
-        self.Maze = [[Node_Cell(x, y, 0, False, 0, 0) for x in range(self.maze_width)] for y in range(self.maze_height)]
+        self.Maze = [[Node_Cell(x, y, 0, False, float('inf'), float('inf')) for x in range(maze_width)] for y in range(maze_height)]
         self.Maze_Backup = self.Maze
         # Thuộc tính bổ sung cho quá trình sinh mê cung
         self.start_pos: Optional[Tuple[int, int]] = (1, 1) # Mặc định vị trí bắt đầu
@@ -33,7 +33,7 @@ class GenerationModel:
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if 0 <= nx < self.maze_width and 0 <= ny < self.maze_height:
+            if 1 <= nx < self.maze_width - 1 and 1 <= ny < self.maze_height - 1:
                 neighbors.append((nx, ny))
 
         return neighbors
@@ -73,6 +73,7 @@ class GenerationModel:
             else:
                 # Backtrack
                 stack.pop()
+
     def Kruskal(self):
         """Thuật toán Kruskal để sinh mê cung"""
         # Tạo danh sách tất cả các tường có thể phá

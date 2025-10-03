@@ -1,5 +1,6 @@
 import os, sys, math, random, pygame, time
 from Model.__init__ import GenerationModel, SolvingModel
+#from Controller.__init__ import MazeController
 
 
 GAME_TITLE = "Monkey's Treasure"
@@ -8,7 +9,7 @@ RIGHT_PANEL_W = 360
 FPS = 60
 GENERATOR = "DFS" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
 MODE = None  # Easy, Medium, Hard
-MAZE_COLS, MAZE_ROWS = 15, 15
+MAZE_COLS, MAZE_ROWS = 25, 19
 CELL_GAP = 0  # khít nhau
 
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
@@ -223,6 +224,7 @@ class MonkeyIdle(pygame.sprite.Sprite):
 # ---------- App ----------
 class App:
     def __init__(self):
+        self.cell_size = None
         self.maze_rect = None
         pygame.init()
         flags = pygame.FULLSCREEN if FULLSCREEN else 0
@@ -280,18 +282,18 @@ class App:
         self.compute_layout()
         spx = self.window_rect.w - RIGHT_PANEL_W + 20
         cur_y = 110  # moved down so not covered by window controls
-        self.btn_restart = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "↻  RESTART", self.font_ui, self.restart_level, theme='orange'); cur_y+=64
-        self.btn_play    = Button((spx, cur_y, (RIGHT_PANEL_W-48)//2, 48), "▶  PLAY",  self.font_ui, self.toggle_play, theme='green')
-        self.btn_pause   = Button((spx+(RIGHT_PANEL_W-48)//2+8, cur_y, (RIGHT_PANEL_W-48)//2, 48), "⏸  PAUSE", self.font_ui, self.toggle_play, theme='yellow'); cur_y+=64
-        self.btn_auto    = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "⚙  AUTO SOLVE", self.font_ui, self.toggle_auto, theme='blue'); cur_y+=64
+        self.btn_restart = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "RESTART", self.font_ui, self.restart_level, theme='orange'); cur_y+=64
+        self.btn_play    = Button((spx, cur_y, (RIGHT_PANEL_W-48)//2, 48), "PLAY",  self.font_ui, self.toggle_play, theme='green')
+        self.btn_pause   = Button((spx+(RIGHT_PANEL_W-48)//2+8, cur_y, (RIGHT_PANEL_W-48)//2, 48), "PAUSE", self.font_ui, self.toggle_play, theme='yellow'); cur_y+=64
+        self.btn_auto    = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "AUTO SOLVE", self.font_ui, self.toggle_auto, theme='blue'); cur_y+=64
         self.dropdown    = Dropdown((spx, cur_y, RIGHT_PANEL_W-40, 44), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="None", on_select=self.set_algo); cur_y+=64
-        self.btn_history = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "🕘  HISTORY", self.font_ui, self.open_history, theme='purple'); cur_y+=64
-        self.btn_back    = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "←  BACK", self.font_ui, self.goto_start, theme='red')
+        self.btn_history = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "HISTORY", self.font_ui, self.open_history, theme='purple'); cur_y+=64
+        self.btn_back    = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "BACK", self.font_ui, self.goto_start, theme='red')
 
         # maze
         self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
         self.maze = self.MazeGenerated
-        self.player = [0,0]
+        self.player = [1,1]  # Khởi tạo từ (1,1) thay vì (0,0)
         self.prepare_sprites()
 
         # prebuild random floor map for repeatability
@@ -371,7 +373,7 @@ class App:
     def reset_run(self):
         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
         self.paused = False; self.auto_on=False
-        self.player=[0,0]
+        self.player=[1,1]  # Bắt đầu từ (1,1) thay vì (0,0) vì viền ngoài là tường
         self.maze = self.MazeGenerated
         self.prepare_sprites()
 
@@ -409,8 +411,9 @@ class App:
     def move(self, dx, dy):
         c, r = self.player; nc, nr = c+dx, r+dy
         if 0 <= nc < MAZE_COLS and 0 <= nr < MAZE_ROWS:
-            if self.maze[nr][nc] == 0:
-                self.player=[nc,nr]; self.steps+=1
+            # Cho phép di chuyển trên Path (1), Start (2), và End (3)
+            if self.maze[nr][nc].status in [1, 2, 3]:
+                self.player=[nc,nr]; self.steps += 1
 
     # ---- Update / Draw
     def update(self, dt):
@@ -422,7 +425,7 @@ class App:
         bg = pygame.transform.smoothscale(self.bg_start, (self.window_rect.w, self.window_rect.h))
         self.screen.blit(bg, (0,0))
         # place START slightly left and lower (~82% h)
-        self.btn_start.rect.center = (int(self.window_rect.centerx*0.85), int(self.window_rect.h*0.82))
+        self.btn_start.rect.center = (int(self.window_rect.centerx * 0.85), int(self.window_rect.h * 0.82))
         self.btn_start.draw(self.screen)
         for b in (self.btn_min, self.btn_max, self.btn_close): b.draw(self.screen)
 
@@ -473,19 +476,19 @@ class App:
         # draw walls using cached scaled tile
         for r in range(MAZE_ROWS):
             for c in range(MAZE_COLS):
-                if self.maze[r][c] == 1:
+                if self.maze[r][c].status == 0:
                     x = self.maze_rect.x + c*cell; y = self.maze_rect.y + r*cell
                     # Use pre-scaled cached wall tile
                     self.screen.blit(self.scaled_wall_tile, (x, y))
 
         # draw player
-        px = self.maze_rect.x + self.player[0]*cell + (cell - self.monkey_idle.current().get_width())//2
-        py = self.maze_rect.y + self.player[1]*cell + (cell - self.monkey_idle.current().get_height())//2
+        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
+        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
         self.screen.blit(self.monkey_idle.current(), (px, py))
 
         # draw banana goal
-        gx = self.maze_rect.x + (MAZE_COLS-1)*cell + (cell - self.banana.base_image.get_width())//2
-        gy = self.maze_rect.y + (MAZE_ROWS-1)*cell + (cell - self.banana.base_image.get_height())//2
+        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
+        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
         self.banana.draw(self.screen, (gx, gy))
 
         # window buttons
