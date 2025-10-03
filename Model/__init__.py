@@ -16,76 +16,79 @@ from Model.node_cell import Node_Cell
 # 5: Moved Path
 
 class GenerationModel:
-    def __init__(self, maze_width, height_width, Node_Cell, mode):
+    def __init__(self, maze_width, maze_height, Algorithm):
         self.maze_width = maze_width
-        self.height_width = height_width
-        self.mode = mode
-
-        # Khởi tạo lưới với tất cả ô là tường (status = 0)
-        self.grid = [[Node_Cell(x, y, 0, False, 0, 0) for x in range(maze_width)] for y in range(height_width)]
-
+        self.maze_height = maze_height
+        self.Algorithm = Algorithm
+        self.Maze = [[Node_Cell(x, y, 0, False, 0, 0) for x in range(self.maze_width)] for y in range(self.maze_height)]
+        self.Maze_Backup = self.Maze
         # Thuộc tính bổ sung cho quá trình sinh mê cung
         self.start_pos: Optional[Tuple[int, int]] = (1, 1) # Mặc định vị trí bắt đầu
-        self.end_pos: Optional[Tuple[int, int]] = (maze_width - 2, height_width - 2) # Mặc định vị trí kết thúc
+        self.end_pos: Optional[Tuple[int, int]] = (maze_width - 2, maze_height - 2) # Mặc định vị trí kết thúc
         self.generation_complete = False # Cờ để kiểm tra quá trình sinh mê cung đã hoàn thành
 
-
-    def __get_neighbors(self, x: int, y: int, distance: int = 2) -> List[Tuple[int, int]]:
-        """Lấy danh sách ô láng giềng hợp lệ"""
+    def __get_neighbors(self, x: int, y: int ) -> List[Tuple[int, int]]:
         neighbors = []
-        directions = [(0, distance), (0, -distance), (distance, 0), (-distance, 0)]
+        directions = [(0, 2), (0, -2), (2, 0), (-2, 0)]
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            # Sửa lỗi: self.width -> self.maze_width, self.height -> self.height_width
-            if 0 <= nx < self.maze_width and 0 <= ny < self.height_width:
-                neighbors
+            if 0 <= nx < self.maze_width and 0 <= ny < self.maze_height:
+                neighbors.append((nx, ny))
 
-    def DFS(self, start_x: int, start_y: int):
+        return neighbors
+
+    def DFS(self):
         """Thuật toán Depth-First Search để sinh mê cung"""
-        stack = [(start_x, start_y)]
-        self.grid[start_y][start_x].status = 1  # Đánh dấu là path
+        stack = [(1, 1)] # Bắt đầu từ ô (1, 1)
+        visited = set()
+        visited.add((1, 1))
+        self.Maze[1][1].status = 1  # Đánh dấu là path
 
         while stack:
-            current_x, current_y = stack[-1]
-            neighbors = []
+            current_x, current_y = stack[-1]  # Peek top of stack
+            neighbors = self.__get_neighbors(current_x, current_y)
 
-            # Tìm các ô láng giềng chưa thăm (status = 0)
-            for nx, ny in self.__get_neighbors(current_x, current_y):
-                if self.grid[ny][nx].status == 0:
-                    neighbors.append((nx, ny))
+            # Lọc ra những neighbor chưa được thăm (status = 0)
+            unvisited_neighbors = []
+            for nx, ny in neighbors:
+                if (nx, ny) not in visited and self.Maze[ny][nx].status == 0:
+                    unvisited_neighbors.append((nx, ny))
 
-            if neighbors:
-                # Chọn ngẫu nhiên một láng giềng
-                next_x, next_y = random.choice(neighbors)
+            if unvisited_neighbors:
+                # Chọn ngẫu nhiên một neighbor chưa thăm
+                next_x, next_y = random.choice(unvisited_neighbors)
 
-                # Phá tường giữa ô hiện tại và ô láng giềng
+                # Đánh dấu đã thăm
+                visited.add((next_x, next_y))
+
+                # Phá tường giữa current và next
                 wall_x = (current_x + next_x) // 2
                 wall_y = (current_y + next_y) // 2
+                self.Maze[wall_y][wall_x].status = 1  # Phá tường
+                self.Maze[next_y][next_x].status = 1  # Đánh dấu ô đích là path
 
-                self.grid[wall_y][wall_x].status = 1  # Path
-                self.grid[next_y][next_x].status = 1  # Path
-
+                # Thêm vào stack
                 stack.append((next_x, next_y))
             else:
+                # Backtrack
                 stack.pop()
-
     def Kruskal(self):
         """Thuật toán Kruskal để sinh mê cung"""
         # Tạo danh sách tất cả các tường có thể phá
         walls = []
 
         # Khởi tạo các ô lẻ là path
-        for y in range(1, self.height_width, 2):
+        for y in range(1, self.maze_height, 2):
             for x in range(1, self.maze_width, 2):
-                self.grid[y][x].status = 1  # Path
+                self.Maze[y][x].status = 1  # Path
 
                 # Thêm tường ngang
                 if x + 2 < self.maze_width:
                     walls.append((x, y, x + 2, y))
 
                 # Thêm tường dọc
-                if y + 2 < self.height_width:
+                if y + 2 < self.maze_height:
                     walls.append((x, y, x, y + 2))
 
         random.shuffle(walls)
@@ -112,13 +115,13 @@ class GenerationModel:
             if union((x1, y1), (x2, y2)):
                 wall_x = (x1 + x2) // 2
                 wall_y = (y1 + y2) // 2
-                self.grid[wall_y][wall_x].status = 1  # Path
+                self.Maze[wall_y][wall_x].status = 1  # Path
 
     def Binary_Tree(self):
         """Thuật toán Binary Tree để sinh mê cung"""
-        for y in range(1, self.height_width, 2):
+        for y in range(1, self.maze_height, 2):
             for x in range(1, self.maze_width, 2):
-                self.grid[y][x].status = 1  # Path
+                self.Maze[y][x].status = 1  # Path
 
                 # Chọn ngẫu nhiên hướng: lên hoặc trái
                 directions = []
@@ -130,19 +133,19 @@ class GenerationModel:
                 if directions:
                     direction = random.choice(directions)
                     if direction == "up":
-                        self.grid[y - 1][x].status = 1  # Path
+                        self.Maze[y - 1][x].status = 1  # Path
                     else:  # left
-                        self.grid[y][x - 1].status = 1  # Path
+                        self.Maze[y][x - 1].status = 1  # Path
 
     def Wilson(self):
         """Thuật toán Wilson để sinh mê cung"""
         # Tạo danh sách tất cả các ô lẻ
-        cells = [(x, y) for y in range(1, self.height_width, 2)
+        cells = [(x, y) for y in range(1, self.maze_height, 2)
                  for x in range(1, self.maze_width, 2)]
 
         # Chọn ô đầu tiên làm điểm bắt đầu
         start = random.choice(cells)
-        self.grid[start[1]][start[0]].status = 1  # Path
+        self.Maze[start[1]][start[0]].status = 1  # Path
         remaining = [cell for cell in cells if cell != start]
 
         while remaining:
@@ -151,10 +154,10 @@ class GenerationModel:
             path = [current]
 
             # Random walk cho đến khi gặp ô đã trong mê cung
-            while self.grid[current[1]][current[0]].status != 1:
+            while self.Maze[current[1]][current[0]].status != 1:
                 neighbors = self.__get_neighbors(current[0], current[1])
                 valid_neighbors = [(x, y) for x, y in neighbors
-                                   if 1 <= x < self.maze_width - 1 and 1 <= y < self.height_width - 1]
+                                   if 1 <= x < self.maze_width - 1 and 1 <= y < self.maze_height - 1]
 
                 if valid_neighbors:
                     next_cell = random.choice(valid_neighbors)
@@ -172,28 +175,27 @@ class GenerationModel:
                 x1, y1 = path[i]
                 x2, y2 = path[i + 1]
 
-                self.grid[y1][x1].status = 1  # Path
+                self.Maze[y1][x1].status = 1  # Path
 
                 # Phá tường giữa hai ô
                 wall_x = (x1 + x2) // 2
                 wall_y = (y1 + y2) // 2
-                self.grid[wall_y][wall_x].status = 1  # Path
+                self.Maze[wall_y][wall_x].status = 1  # Path
 
             # Cập nhật danh sách ô còn lại
             remaining = [cell for cell in remaining
-                         if self.grid[cell[1]][cell[0]].status != 1]
+                if self.Maze[cell[1]][cell[0]].status != 1]
 
     def Recursive_Division(self):
         """Thuật toán Recursive Division để sinh mê cung"""
         # Bắt đầu với toàn bộ khu vực là đường đi
-        for y in range(self.height_width):
+        for y in range(self.maze_height):
             for x in range(self.maze_width):
-                if y == 0 or y == self.height_width - 1 or x == 0 or x == self.maze_width - 1:
-                    self.grid[y][x].status = 0  # Wall
+                if y == 0 or y == self.maze_height - 1 or x == 0 or x == self.maze_width - 1:
+                    self.Maze[y][x].status = 0  # Wall
                 else:
-                    self.grid[y][x].status = 1  # Path
-
-        self.__divide(1, 1, self.maze_width - 2, self.height_width - 2)
+                    self.Maze[y][x].status = 1  # Path
+        self.__divide(1, 1, self.maze_width - 2, self.maze_height - 2)
 
     def __divide(self, x: int, y: int, width: int, height: int):
         """Đệ quy chia khu vực thành các phần nhỏ hơn"""
@@ -209,13 +211,13 @@ class GenerationModel:
 
             # Tạo tường ngang
             for wx in range(x, x + width):
-                self.grid[wall_y][wx].status = 0  # Wall
+                self.Maze[wall_y][wx].status = 0  # Wall
 
             # Tạo lỗ ngẫu nhiên
             hole_x = x + random.randrange(0, width)
             if hole_x % 2 == 0:
                 hole_x += 1 if hole_x < x + width - 1 else -1
-            self.grid[wall_y][hole_x].status = 1  # Path
+            self.Maze[wall_y][hole_x].status = 1  # Path
 
             # Đệ quy chia hai phần
             self.__divide(x, y, width, wall_y - y)
@@ -227,54 +229,70 @@ class GenerationModel:
 
             # Tạo tường dọc
             for wy in range(y, y + height):
-                self.grid[wy][wall_x].status = 0  # Wall
+                self.Maze[wy][wall_x].status = 0  # Wall
 
             # Tạo lỗ ngẫu nhiên
             hole_y = y + random.randrange(0, height)
             if hole_y % 2 == 0:
                 hole_y += 1 if hole_y < y + height - 1 else -1
-            self.grid[hole_y][wall_x].status = 1  # Path
+            self.Maze[hole_y][wall_x].status = 1  # Path
 
             # Đệ quy chia hai phần
             self.__divide(x, y, wall_x - x, height)
             self.__divide(wall_x + 1, y, width - (wall_x - x + 1), height)
-    def generate_maze(self):
-        """Sinh mê cung theo thuật toán đã chọn"""
-        if self.mode == "DFS":
-            self.DFS(1, 1)  # Thêm tham số bắt buộc
-        elif self.mode == "Kruskal":
-            self.Kruskal()
-        elif self.mode == "Binary_Tree":
-            self.Binary_Tree()
-        elif self.mode == "Wilson":
-            self.Wilson()
-        elif self.mode == "Recursive_Division":
-            self.Recursive_Division()
 
-        self.__set_start_end()
-        self.generation_complete = True
 
     def __set_start_end(self):
         """Đặt điểm bắt đầu và kết thúc"""
         # Tìm ô đường đi đầu tiên làm điểm bắt đầu
-        for y in range(self.height_width):
+        for y in range(self.maze_height):
             for x in range(self.maze_width):
-                if self.grid[y][x].status == 1:  # Path
+                if self.Maze[y][x].status == 1:  # Path
                     self.start_pos = (x, y)
-                    self.grid[y][x].status = 2  # Start
+                    self.Maze[y][x].status = 2  # Start
                     break
             if self.start_pos:
                 break
 
         # Tìm ô đường đi cuối cùng làm điểm kết thúc
-        for y in range(self.height_width-1, -1, -1):
+        for y in range(self.maze_height-1, -1, -1):
             for x in range(self.maze_width-1, -1, -1):
-                if self.grid[y][x].status == 1:  # Path
+                if self.Maze[y][x].status == 1:  # Path
                     self.end_pos = (x, y)
-                    self.grid[y][x].status = 3  # End
+                    self.Maze[y][x].status = 3  # End
                     break
             if self.end_pos:
                 break
+    def init_maze_reset(self):
+        self.Maze_Backup = self.Maze
+
+    def reset_maze(self):
+        self.Maze = self.Maze_Backup
+        self.generation_complete = False
+        self.start_pos = None
+        self.end_pos = None
+
+    def generate_maze(self):
+        """Sinh mê cung theo thuật toán đã chọn"""
+        if self.Algorithm == "DFS":
+            self.DFS()
+            self.init_maze_reset()
+        elif self.Algorithm == "Kruskal":
+            self.Kruskal()
+            self.init_maze_reset()
+        elif self.Algorithm == "Binary_Tree":
+            self.Binary_Tree()
+            self.init_maze_reset()
+        elif self.Algorithm == "Wilson":
+            self.Wilson()
+            self.init_maze_reset()
+        elif self.Algorithm == "Recursive_Division":
+            self.Recursive_Division()
+            self.init_maze_reset()
+
+        self.__set_start_end()
+        self.generation_complete = True
+        return self.Maze
 
 class SolvingModel:
     def __init__(self, maze_grid: List[List[Node_Cell]], maze_width: int, maze_height: int):
@@ -331,8 +349,7 @@ class SolvingModel:
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if (0 <= nx < self.maze_width and 0 <= ny < self.maze_height and
-                self.maze_grid[ny][nx].status != 0):  # Không phải tường
+            if (0 <= nx < self.maze_width and 0 <= ny < self.maze_height and self.maze_grid[ny][nx].status != 0):  # Không phải tường
                 neighbors.append((nx, ny))
 
         return neighbors
@@ -341,7 +358,7 @@ class SolvingModel:
         """Hàm heuristic cho A* (Manhattan distance)"""
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
-    def reconstruct_path(self, came_from: Dict[Tuple[int, int], Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def reconstruct_path(self, came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]]) -> List[Tuple[int, int]]:
         """Tái tạo đường đi từ came_from dictionary"""
         path = []
         current = self.end_pos
@@ -371,7 +388,7 @@ class SolvingModel:
                 self.path_length = len(self.solution_path)
                 return True
 
-            for neighbor in self.get_neighbors(*current):
+            for neighbor in self.get_neighbors(current[0], current[1]):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     came_from[neighbor] = current
@@ -403,7 +420,7 @@ class SolvingModel:
                 self.path_length = len(self.solution_path)
                 return True
 
-            for neighbor in self.get_neighbors(*current):
+            for neighbor in self.get_neighbors(current[0], current[1]):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     came_from[neighbor] = current
@@ -442,7 +459,7 @@ class SolvingModel:
                 self.path_length = len(self.solution_path)
                 return True
 
-            for neighbor in self.get_neighbors(*current):
+            for neighbor in self.get_neighbors(current[0], current[1]):
                 new_cost = current_cost + 1  # Giả sử mỗi bước có cost = 1
 
                 if neighbor not in visited and (neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]):
@@ -483,7 +500,7 @@ class SolvingModel:
                 self.path_length = len(self.solution_path)
                 return True
 
-            for neighbor in self.get_neighbors(*current):
+            for neighbor in self.get_neighbors(current[0], current[1]):
                 tentative_g_score = g_score_current + 1
 
                 if neighbor not in visited and (neighbor not in g_score or tentative_g_score < g_score[neighbor]):
@@ -541,7 +558,7 @@ class SolvingModel:
                     self.path_length = len(self.solution_path)
                     return True
 
-                for neighbor in self.get_neighbors(*current_start):
+                for neighbor in self.get_neighbors(current_start[0], current_start[1]):
                     if neighbor not in visited_start:
                         visited_start.add(neighbor)
                         came_from_start[neighbor] = current_start
@@ -577,7 +594,7 @@ class SolvingModel:
                     self.path_length = len(self.solution_path)
                     return True
 
-                for neighbor in self.get_neighbors(*current_end):
+                for neighbor in self.get_neighbors(current_end[0], current_end[1]):
                     if neighbor not in visited_end:
                         visited_end.add(neighbor)
                         came_from_end[neighbor] = current_end

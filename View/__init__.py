@@ -1,10 +1,14 @@
 import os, sys, math, random, pygame, time
-import Model
+from Model.__init__ import GenerationModel, SolvingModel
+
+
 GAME_TITLE = "Monkey's Treasure"
 FULLSCREEN = False
 RIGHT_PANEL_W = 360
 FPS = 60
-MAZE_COLS, MAZE_ROWS = 21, 13
+GENERATOR = "DFS" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
+MODE = None  # Easy, Medium, Hard
+MAZE_COLS, MAZE_ROWS = 15, 15
 CELL_GAP = 0  # khít nhau
 
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
@@ -215,15 +219,11 @@ class MonkeyIdle(pygame.sprite.Sprite):
     def current(self):
         return self.frames[self.index]
 
-# ---------- Maze data ----------
-def make_placeholder_maze(cols, rows):
-    grid = [[1 if random.random()<0.25 else 0 for _ in range(cols)] for _ in range(rows)]
-    grid[0][0] = 0; grid[rows-1][cols-1] = 0
-    return grid
 
 # ---------- App ----------
 class App:
     def __init__(self):
+        self.maze_rect = None
         pygame.init()
         flags = pygame.FULLSCREEN if FULLSCREEN else 0
         self.screen = pygame.display.set_mode((1280, 800), flags)
@@ -289,7 +289,8 @@ class App:
         self.btn_back    = Button((spx, cur_y, RIGHT_PANEL_W-40, 48), "←  BACK", self.font_ui, self.goto_start, theme='red')
 
         # maze
-        self.maze = make_placeholder_maze(MAZE_COLS, MAZE_ROWS)
+        self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
+        self.maze = self.MazeGenerated
         self.player = [0,0]
         self.prepare_sprites()
 
@@ -371,7 +372,8 @@ class App:
         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
         self.paused = False; self.auto_on=False
         self.player=[0,0]
-        self.maze = make_placeholder_maze(MAZE_COLS, MAZE_ROWS)
+        self.maze = self.MazeGenerated
+        self.prepare_sprites()
 
     def restart_level(self): self.reset_run()
     def toggle_play(self): self.paused = not self.paused
@@ -462,8 +464,8 @@ class App:
         cell = self.cell_size
         for r in range(MAZE_ROWS):
             for c in range(MAZE_COLS):
-                x = self.maze_rect.x + c*cell
-                y = self.maze_rect.y + r*cell
+                x = self.maze_rect.x + c * cell
+                y = self.maze_rect.y + r * cell
                 idx = self.floor_map[r][c]
                 # Use pre-scaled cached tiles instead of scaling every frame
                 self.screen.blit(self.scaled_floor_tiles[idx], (x,y))
