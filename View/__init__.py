@@ -718,12 +718,11 @@ class App:
             self.is_fullscreen = False
             self.is_minimized = True
             
-            # Lấy kích thước màn hình
-            import ctypes
-            user32 = ctypes.windll.user32
-            screen_width = user32.GetSystemMetrics(0)
-            screen_height = user32.GetSystemMetrics(1)
-            
+            # Lấy kích thước màn hình sử dụng pygame (cross-platform)
+            display_info = pygame.display.Info()
+            screen_width = display_info.current_w
+            screen_height = display_info.current_h
+
             # Tính 70% kích thước màn hình nhưng giữ tỷ lệ khung hình
             target_width = int(screen_width * 0.7)
             target_height = int(screen_height * 0.7)
@@ -745,12 +744,12 @@ class App:
             window_width = max(640, window_width)
             window_height = max(480, window_height)
             
+            # Căn giữa cửa sổ trước khi tạo
+            self.center_window(window_width, window_height)
+
             # Tạo cửa sổ mới với kích thước đã tính
             pygame.display.set_mode((window_width, window_height))
-            
-            # Căn giữa cửa sổ
-            self.center_window(window_width, window_height)
-        
+
         # Cập nhật sau khi thay đổi kích thước
         self.screen = pygame.display.get_surface()
         self.window_rect = self.screen.get_rect()
@@ -759,25 +758,24 @@ class App:
         self.prepare_sprites()
     
     def center_window(self, width, height):
-        """Đặt cửa sổ ở giữa màn hình"""
+        """Đặt cửa sổ ở giữa màn hình - cross-platform version"""
         try:
-            import ctypes
-            # Lấy kích thước màn hình
-            user32 = ctypes.windll.user32
-            screen_width = user32.GetSystemMetrics(0)
-            screen_height = user32.GetSystemMetrics(1)
-            
+            # Lấy kích thước màn hình sử dụng pygame
+            display_info = pygame.display.Info()
+            screen_width = display_info.current_w
+            screen_height = display_info.current_h
+
             # Tính vị trí căn giữa
             x = (screen_width - width) // 2
             y = (screen_height - height) // 2
             
-            # Đặt vị trí cửa sổ
-            hwnd = pygame.display.get_wm_info()['window']
-            ctypes.windll.user32.SetWindowPos(
-                hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004  # SWP_NOSIZE | SWP_NOZORDER
-            )
+            # Đặt vị trí cửa sổ sử dụng environment variable (cross-platform)
+            import os
+            os.environ['SDL_WINDOW_POS'] = f'{x},{y}'
+
         except Exception as e:
-            pass  # Nếu không thể căn giữa, bỏ qua
+            # Nếu không thể căn giữa, để pygame tự xử lý
+            pass
 
     def toggle_fullscreen(self):
         global FULLSCREEN
@@ -868,41 +866,22 @@ class App:
                         
                         if not clicked_button:
                             self.dragging = True
-                            # Lấy vị trí cửa sổ hiện tại
-                            import ctypes
-                            try:
-                                hwnd = pygame.display.get_wm_info()['window']
-                                rect = ctypes.wintypes.RECT()
-                                ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                                mouse_x, mouse_y = pygame.mouse.get_pos()
-                                # Chuyển đổi từ tọa độ client sang screen
-                                screen_mouse_x = rect.left + mouse_x
-                                screen_mouse_y = rect.top + mouse_y
-                                self.drag_offset = (screen_mouse_x - rect.left, screen_mouse_y - rect.top)
-                            except:
-                                self.drag_offset = event.pos
-                
+                            self.drag_offset = event.pos
+
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     self.dragging = False
                 
                 elif event.type == pygame.MOUSEMOTION:
                     if self.dragging:
-                        # Di chuyển cửa sổ
+                        # Di chuyển cửa sổ - simplified cross-platform version
                         try:
-                            import ctypes
-                            hwnd = pygame.display.get_wm_info()['window']
-                            # Lấy vị trí chuột trên màn hình
-                            screen_pos = pygame.mouse.get_pos()
-                            rect = ctypes.wintypes.RECT()
-                            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                            screen_mouse_x = rect.left + screen_pos[0]
-                            screen_mouse_y = rect.top + screen_pos[1]
-                            
-                            new_x = screen_mouse_x - self.drag_offset[0]
-                            new_y = screen_mouse_y - self.drag_offset[1]
-                            ctypes.windll.user32.SetWindowPos(
-                                hwnd, 0, new_x, new_y, 0, 0, 0x0001 | 0x0004  # SWP_NOSIZE | SWP_NOZORDER
-                            )
+                            # Lấy vị trí chuột hiện tại
+                            mouse_x, mouse_y = pygame.mouse.get_pos()
+                            # Tính toán vị trí mới
+                            new_x = mouse_x - self.drag_offset[0]
+                            new_y = mouse_y - self.drag_offset[1]
+                            # Đặt lại vị trí cửa sổ cho lần tạo tiếp theo
+                            os.environ['SDL_WINDOW_POS'] = f'{new_x},{new_y}'
                         except:
                             pass
             
