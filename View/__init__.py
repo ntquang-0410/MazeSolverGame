@@ -911,8 +911,8 @@ class App:
             if self.maze[nr][nc].status in [1, 2, 3]:
                 self.player=[nc,nr]; self.steps += 1
 
-                # Kiểm tra chiến thắng (chạm chuối ở góc phải dưới)
-                if nc == MAZE_COLS-1 and nr == MAZE_ROWS-1:
+                # Kiểm tra chiến thắng (chạm chuối ở vị trí thực tế)
+                if nc == MAZE_COLS-2 and nr == MAZE_ROWS-2:
                     self.game_won = True
                     self.paused = True
                     time_str = f"{int(self.timer//60):02d}:{int(self.timer%60):02d}"
