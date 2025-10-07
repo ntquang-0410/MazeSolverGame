@@ -694,7 +694,7 @@ class App:
         self.btn_history.scaled_bg = pygame.transform.smoothscale(self.btn_history.bg_image, (half_btn_w, row4_height))
         self.btn_back.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height)
         self.btn_back.scaled_bg = pygame.transform.smoothscale(self.btn_back.bg_image, (half_btn_w, row4_height))
-    
+
     def hide_window(self):
         """Ẩn cửa sổ xuống taskbar (iconify)"""
         try:
