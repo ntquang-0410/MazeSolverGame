@@ -7,7 +7,7 @@ GAME_TITLE = "Monkey's Treasure"
 FULLSCREEN = False
 RIGHT_PANEL_W = 360
 FPS = 60
-GENERATOR = "DFS" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
+GENERATOR = "None" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
 MODE = None  # Easy, Medium, Hard
 MAZE_COLS, MAZE_ROWS = 25, 19
 CELL_GAP = 0  # khít nhau
@@ -219,7 +219,9 @@ class Dropdown:
                     index = (event.pos[1]-panel.y)//opt_h
                     if 0 <= index < len(self.options):
                         self.selected = self.options[index]
-                        if self.on_select: self.on_select(self.selected)
+                        if self.on_select:
+                            self.GENERATOR = self.on_select
+                            self.on_select(self.selected)
                     self.open = False
                 elif self.rect.collidepoint(event.pos):
                     self.open = False
