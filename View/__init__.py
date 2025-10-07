@@ -1,13 +1,15 @@
 import os, sys, math, random, pygame, time
+from Model.__init__ import GenerationModel, SolvingModel
+#from Controller.__init__ import MazeController
 
-# Add parent directory to Python path to import Model
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import Model
+
 GAME_TITLE = "Monkey's Treasure"
-FULLSCREEN = True  # Mở full màn hình ban đầu
+FULLSCREEN = False
 RIGHT_PANEL_W = 360
 FPS = 60
-MAZE_COLS, MAZE_ROWS = 21, 13
+GENERATOR = "DFS" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
+MODE = None  # Easy, Medium, Hard
+MAZE_COLS, MAZE_ROWS = 25, 19
 CELL_GAP = 0  # khít nhau
 
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
@@ -68,10 +70,10 @@ def calculate_button_size(image, target_width=None, target_height=None):
     """Tính kích thước button giữ nguyên aspect ratio của hình ảnh gốc"""
     if image is None:
         return (100, 40)  # Default size
-    
+
     orig_w, orig_h = image.get_size()
     aspect_ratio = orig_w / orig_h
-    
+
     if target_width and not target_height:
         # Có width, tính height theo tỷ lệ
         return (target_width, int(target_width / aspect_ratio))
@@ -82,10 +84,10 @@ def calculate_button_size(image, target_width=None, target_height=None):
         # Có cả 2, chọn size nhỏ hơn để fit
         w_from_width = target_width
         h_from_width = int(target_width / aspect_ratio)
-        
+
         w_from_height = int(target_height * aspect_ratio)
         h_from_height = target_height
-        
+
         if h_from_width <= target_height:
             return (w_from_width, h_from_width)
         else:
@@ -108,18 +110,18 @@ class Button:
         self.bg_image = bg_image
         self.scaled_bg = None
         self.keep_aspect = keep_aspect
-        
+
         # Scale background image if provided
         if self.bg_image:
             if keep_aspect:
                 # Giữ nguyên tỷ lệ aspect ratio của hình ảnh
                 orig_w, orig_h = self.bg_image.get_size()
                 aspect_ratio = orig_w / orig_h
-                
+
                 # Tính kích thước mới giữ nguyên tỷ lệ
                 target_w = self.rect.width
                 target_h = self.rect.height
-                
+
                 new_h = int(target_w / aspect_ratio)
                 if new_h <= target_h:
                     # Dùng width làm chuẩn
@@ -128,7 +130,7 @@ class Button:
                     # Dùng height làm chuẩn
                     new_w = int(target_h * aspect_ratio)
                     self.rect.width = new_w
-            
+
             self.scaled_bg = pygame.transform.smoothscale(self.bg_image, self.rect.size)
 
     def draw(self, surface):
@@ -143,16 +145,16 @@ class Button:
                 surface.blit(hover_surface, self.rect.topleft)
             else:
                 surface.blit(self.scaled_bg, self.rect.topleft)
-            
+
             # Vẽ text lên hình ảnh nền
             color = (255,255,255) if self.enabled else (170,170,170)
             label = self.font.render(self.text, True, color)
-            
+
             # Thêm shadow cho text để dễ đọc hơn
             shadow = self.font.render(self.text, True, (0,0,0))
             shadow_pos = label.get_rect(center=(self.rect.centerx+1, self.rect.centery+1))
             text_pos = label.get_rect(center=self.rect.center)
-            
+
             surface.blit(shadow, shadow_pos)
             surface.blit(label, text_pos)
         else:
@@ -279,49 +281,49 @@ class ModalVictory:
 
     def draw(self, surface, screen_rect, font_header, font_ui):
         if not self.visible: return
-        
+
         # Overlay
         overlay = pygame.Surface(screen_rect.size, pygame.SRCALPHA)
         overlay.fill((0,0,0,180))
         surface.blit(overlay, (0,0))
-        
+
         # Victory panel
         w, h = 400, 280
         panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)
-        
+
         # Golden victory theme
         draw_shadow(surface, panel, radius=20, offset=(0,12), alpha=140)
         draw_glass_card(surface, panel, radius=20, bg=(255,215,0,220), border=(218,165,32), border_alpha=100)
-        
+
         # Victory title with glow effect
         title_text = "VICTORY!"
         title = font_header.render(title_text, True, (139,69,19))
         title_glow = font_header.render(title_text, True, (255,255,255))
-        
+
         # Draw glow effect
         glow_pos = (panel.centerx - title_glow.get_width()//2, panel.y + 30)
         for offset_x in [-2, -1, 0, 1, 2]:
             for offset_y in [-2, -1, 0, 1, 2]:
                 if offset_x != 0 or offset_y != 0:
                     surface.blit(title_glow, (glow_pos[0] + offset_x, glow_pos[1] + offset_y))
-        
+
         # Main title
         title_pos = (panel.centerx - title.get_width()//2, panel.y + 30)
         surface.blit(title, title_pos)
-        
+
         # Stats
         y_pos = panel.y + 100
         stats_color = (101,67,33)
-        
+
         time_text = f"Time: {self.time_str}"
         time_surface = font_ui.render(time_text, True, stats_color)
         surface.blit(time_surface, (panel.centerx - time_surface.get_width()//2, y_pos))
-        
+
         y_pos += 40
         steps_text = f"Steps: {self.steps}"
         steps_surface = font_ui.render(steps_text, True, stats_color)
         surface.blit(steps_surface, (panel.centerx - steps_surface.get_width()//2, y_pos))
-        
+
         # Restart button - giảm kích thước nhỏ hơn nữa
         win_restart_img = getattr(self, 'win_restart_img', None)
         if self.restart_btn is None:
@@ -331,10 +333,10 @@ class ModalVictory:
                 btn_w, btn_h = btn_size
             else:
                 btn_w, btn_h = 110, 38
-            
+
             btn_x = panel.centerx - btn_w//2
             btn_y = panel.y + h - btn_h - 15
-            
+
             self.restart_btn = Button(
                 (btn_x, btn_y, btn_w, btn_h),
                 "",  # Xóa text
@@ -344,19 +346,19 @@ class ModalVictory:
                 bg_image=win_restart_img,
                 keep_aspect=False
             )
-        
+
         self.restart_btn.draw(surface)
-    
+
     def handle_restart(self):
         self.hide()
         if self.on_restart:
             self.on_restart()
-    
+
     def handle_event(self, event):
         if not self.visible: return
         if self.restart_btn:
             self.restart_btn.handle_event(event)
-        
+
         # Close on ESC or click outside
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.hide()
@@ -377,7 +379,6 @@ class FloatingBanana(pygame.sprite.Sprite):
         self.image = image
         self.rect = self.image.get_rect()
         self.t = 0.0
-        self.offset = (0, 0)  # Khởi tạo offset ngay từ đầu
 
     def update(self, dt):
         self.t += dt
@@ -406,15 +407,12 @@ class MonkeyIdle(pygame.sprite.Sprite):
     def current(self):
         return self.frames[self.index]
 
-# ---------- Maze data ----------
-def make_placeholder_maze(cols, rows):
-    grid = [[1 if random.random()<0.25 else 0 for _ in range(cols)] for _ in range(rows)]
-    grid[0][0] = 0; grid[rows-1][cols-1] = 0
-    return grid
 
 # ---------- App ----------
 class App:
     def __init__(self):
+        self.cell_size = None
+        self.maze_rect = None
         pygame.init()
         flags = pygame.FULLSCREEN if FULLSCREEN else 0
         self.screen = pygame.display.set_mode((0, 0) if FULLSCREEN else (1024, 768), flags)
@@ -435,7 +433,7 @@ class App:
         self.tile_wall = load_image(IMG("tile_wall.png"))
         self.monkey_img = load_image(IMG("monkey.png"))
         self.banana_img = load_image(IMG("banana_rainbow.png"))
-        
+
         # button assets
         self.btn_assets = {
             'start': load_image(IMG("button/start_btn.png")),
@@ -475,12 +473,12 @@ class App:
         self.modal_history = ModalHistory(lambda: self.history)
         self.modal_victory = ModalVictory(self.restart_level)
         self.modal_victory.win_restart_img = self.btn_assets['win_restart']
-        
+
         # Lưu kích thước windowed và trạng thái fullscreen
         self.windowed_size = (1024, 768)  # Kích thước khi không full màn hình
         self.is_fullscreen = FULLSCREEN  # Ban đầu là full màn hình
         self.is_minimized = False  # Trạng thái thu nhỏ
-        
+
         # Window dragging state
         self.dragging = False
         self.drag_offset = (0, 0)
@@ -489,35 +487,35 @@ class App:
         btn_size = 48  # Kích thước nút - tăng lên
         btn_y = 10     # Vị trí Y - dời lên cao hơn
         btn_gap = 8    # Khoảng cách giữa các nút
-        
+
         # Tính vị trí từ phải sang trái (Exit -> Maximize -> Minimize)
         x_exit = self.window_rect.w - 10 - btn_size
         x_maximize = x_exit - btn_gap - btn_size
         x_minimize = x_maximize - btn_gap - btn_size
-        
+
         # Tạo 3 nút mới với assets đúng
         # Nút trái: Hide (ẩn cửa sổ)
         self.btn_min = Button(
-            (x_minimize, btn_y, btn_size, btn_size), 
-            "", self.font_small, self.hide_window, 
-            theme='yellow', 
-            bg_image=self.btn_assets['minimize'], 
+            (x_minimize, btn_y, btn_size, btn_size),
+            "", self.font_small, self.hide_window,
+            theme='yellow',
+            bg_image=self.btn_assets['minimize'],
             keep_aspect=False
         )
-        
+
         # Nút giữa: Minimize (thu nhỏ cửa sổ)
         self.btn_max = Button(
-            (x_maximize, btn_y, btn_size, btn_size), 
-            "", self.font_small, self.shrink_window, 
-            theme='blue', 
-            bg_image=self.btn_assets['small'], 
+            (x_maximize, btn_y, btn_size, btn_size),
+            "", self.font_small, self.shrink_window,
+            theme='blue',
+            bg_image=self.btn_assets['small'],
             keep_aspect=False
         )
-        
+
         self.btn_close = Button(
-            (x_exit, btn_y, btn_size, btn_size), 
-            "", self.font_small, self.quit, 
-            theme='red', 
+            (x_exit, btn_y, btn_size, btn_size),
+            "", self.font_small, self.quit,
+            theme='red',
             bg_image=self.btn_assets['close'],  # Dùng close_btn thay vì exit_btn
             keep_aspect=False
         )
@@ -528,21 +526,21 @@ class App:
 
         # game UI
         self.compute_layout()
-        
+
         # Tính toán vị trí sidebar và margin
         sidebar_left = self.window_rect.w - RIGHT_PANEL_W
         margin = 30  # Margin từ mép sidebar
         cur_y = 120  # Vị trí Y bắt đầu (tránh window controls)
-        
+
         # Chiều rộng các nút
         target_btn_w = RIGHT_PANEL_W - (margin * 2)  # Chiều rộng toàn bộ
         half_btn_w = (target_btn_w - 10) // 2  # Chiều rộng mỗi nút (2 nút/dòng)
         btn_gap = 10  # Khoảng cách giữa 2 nút trong cùng 1 dòng
         row_spacing = 12  # Khoảng cách giữa các dòng
-        
+
         # Vị trí X bắt đầu (căn giữa trong sidebar)
         spx = sidebar_left + margin
-        
+
         # Tính kích thước các nút giữ nguyên aspect ratio
         restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)
         play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
@@ -550,37 +548,38 @@ class App:
         auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)
         history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)
         back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)
-        
+
         # Dòng 1: Restart và Auto
         row1_height = max(restart_size[1], auto_size[1])
         self.btn_restart = Button((spx, cur_y, half_btn_w, row1_height), "", self.font_ui, self.restart_level, theme='orange', bg_image=self.btn_assets['restart'], keep_aspect=False)
         self.btn_auto = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height), "", self.font_ui, self.toggle_auto, theme='blue', bg_image=self.btn_assets['auto'], keep_aspect=False)
         cur_y += row1_height + row_spacing
-        
+
         # Dòng 2: Play và Pause
         row2_height = max(play_size[1], pause_size[1])
         self.btn_play = Button((spx, cur_y, half_btn_w, row2_height), "", self.font_ui, self.toggle_play, theme='green', bg_image=self.btn_assets['small'], keep_aspect=False)
         self.btn_pause = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height), "", self.font_ui, self.toggle_play, theme='yellow', bg_image=self.btn_assets['small'], keep_aspect=False)
         cur_y += row2_height + row_spacing
-        
+
         # Dòng 3: Dropdown (toàn bộ chiều rộng)
         self.dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="None", on_select=self.set_algo)
         cur_y += 40 + row_spacing
-        
+
         # Dòng 4: History và Back
         row4_height = max(history_size[1], back_size[1])
         self.btn_history = Button((spx, cur_y, half_btn_w, row4_height), "", self.font_ui, self.open_history, theme='purple', bg_image=self.btn_assets['history'], keep_aspect=False)
         self.btn_back = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height), "", self.font_ui, self.goto_start, theme='red', bg_image=self.btn_assets['back'], keep_aspect=False)
 
         # maze
-        self.maze = make_placeholder_maze(MAZE_COLS, MAZE_ROWS)
-        self.player = [0,0]
+        self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
+        self.maze = self.MazeGenerated
+        self.player = [1,1]  # Khởi tạo từ (1,1) thay vì (0,0)
         self.prepare_sprites()
 
         # prebuild random floor map for repeatability
         random.seed(42)
         self.floor_map = [[random.randrange(len(self.floor_tiles)) for _ in range(MAZE_COLS)] for _ in range(MAZE_ROWS)]
-        
+
         # Cập nhật scale các nút game ngay sau khi khởi tạo
         self.update_game_buttons()
 
@@ -619,15 +618,15 @@ class App:
         btn_size = 48  # Tăng kích thước nút
         btn_y = 10  # Vị trí Y - cao hơn
         btn_gap = 8
-        
+
         x_exit = self.window_rect.w - 10 - btn_size
         x_maximize = x_exit - btn_gap - btn_size
         x_minimize = x_maximize - btn_gap - btn_size
-        
+
         self.btn_min.rect = pygame.Rect(x_minimize, btn_y, btn_size, btn_size)
         self.btn_max.rect = pygame.Rect(x_maximize, btn_y, btn_size, btn_size)
         self.btn_close.rect = pygame.Rect(x_exit, btn_y, btn_size, btn_size)
-        
+
         # Re-scale background images
         if self.btn_min.bg_image:
             self.btn_min.scaled_bg = pygame.transform.smoothscale(self.btn_min.bg_image, (btn_size, btn_size))
@@ -635,31 +634,31 @@ class App:
             self.btn_max.scaled_bg = pygame.transform.smoothscale(self.btn_max.bg_image, (btn_size, btn_size))
         if self.btn_close.bg_image:
             self.btn_close.scaled_bg = pygame.transform.smoothscale(self.btn_close.bg_image, (btn_size, btn_size))
-    
+
     def update_game_buttons(self):
         """Cập nhật kích thước và vị trí các nút game khi cửa sổ thay đổi"""
         # Scale sidebar width theo tỷ lệ cửa sổ
         scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)
         scale_factor = max(0.5, min(1.0, scale_factor))
-        
+
         scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)
         scaled_panel_w = max(200, scaled_panel_w)  # Tối thiểu 200px
-        
+
         # Tính toán vị trí sidebar và margin
         sidebar_left = self.window_rect.w - scaled_panel_w
         margin = int(30 * scale_factor)
         margin = max(15, margin)  # Margin tối thiểu
         cur_y = 120
-        
+
         # Chiều rộng các nút
         target_btn_w = scaled_panel_w - (margin * 2)
         half_btn_w = (target_btn_w - 10) // 2
         btn_gap = 10
         row_spacing = max(8, int(12 * scale_factor))
-        
+
         # Vị trí X bắt đầu
         spx = sidebar_left + margin
-        
+
         # Tính lại kích thước cho các nút
         restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)
         play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
@@ -667,7 +666,7 @@ class App:
         auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)
         history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)
         back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)
-        
+
         # Dòng 1: Restart và Auto
         row1_height = max(restart_size[1], auto_size[1])
         self.btn_restart.rect = pygame.Rect(spx, cur_y, half_btn_w, row1_height)
@@ -675,7 +674,7 @@ class App:
         self.btn_auto.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height)
         self.btn_auto.scaled_bg = pygame.transform.smoothscale(self.btn_auto.bg_image, (half_btn_w, row1_height))
         cur_y += row1_height + row_spacing
-        
+
         # Dòng 2: Play và Pause
         row2_height = max(play_size[1], pause_size[1])
         self.btn_play.rect = pygame.Rect(spx, cur_y, half_btn_w, row2_height)
@@ -683,29 +682,29 @@ class App:
         self.btn_pause.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height)
         self.btn_pause.scaled_bg = pygame.transform.smoothscale(self.btn_pause.bg_image, (half_btn_w, row2_height))
         cur_y += row2_height + row_spacing
-        
+
         # Dòng 3: Dropdown
         self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
         cur_y += 40 + row_spacing
-        
+
         # Dòng 4: History và Back
         row4_height = max(history_size[1], back_size[1])
         self.btn_history.rect = pygame.Rect(spx, cur_y, half_btn_w, row4_height)
         self.btn_history.scaled_bg = pygame.transform.smoothscale(self.btn_history.bg_image, (half_btn_w, row4_height))
         self.btn_back.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height)
         self.btn_back.scaled_bg = pygame.transform.smoothscale(self.btn_back.bg_image, (half_btn_w, row4_height))
-    
+
     def hide_window(self):
         """Ẩn cửa sổ xuống taskbar (iconify)"""
         try:
             pygame.display.iconify()
         except:
             pass
-    
+
     def shrink_window(self):
         """Thu nhỏ cửa sổ về 70% màn hình (giữ tỷ lệ) hoặc phóng to lại fullscreen"""
         global FULLSCREEN
-        
+
         if self.is_minimized:
             # Đang ở trạng thái thu nhỏ -> phóng to về fullscreen
             FULLSCREEN = True
@@ -717,7 +716,7 @@ class App:
             FULLSCREEN = False
             self.is_fullscreen = False
             self.is_minimized = True
-            
+
             # Lấy kích thước màn hình sử dụng pygame (cross-platform)
             display_info = pygame.display.Info()
             screen_width = display_info.current_w
@@ -726,10 +725,10 @@ class App:
             # Tính 70% kích thước màn hình nhưng giữ tỷ lệ khung hình
             target_width = int(screen_width * 0.7)
             target_height = int(screen_height * 0.7)
-            
+
             # Giữ tỷ lệ khung hình của màn hình gốc
             screen_ratio = screen_width / screen_height
-            
+
             # Tính kích thước cửa sổ giữ nguyên tỷ lệ
             if target_width / target_height > screen_ratio:
                 # Giới hạn bởi chiều cao
@@ -739,11 +738,11 @@ class App:
                 # Giới hạn bởi chiều rộng
                 window_width = target_width
                 window_height = int(window_width / screen_ratio)
-            
+
             # Đảm bảo kích thước tối thiểu
             window_width = max(640, window_width)
             window_height = max(480, window_height)
-            
+
             # Căn giữa cửa sổ trước khi tạo
             self.center_window(window_width, window_height)
 
@@ -756,7 +755,7 @@ class App:
         self.compute_layout()
         self.update_window_controls()
         self.prepare_sprites()
-    
+
     def center_window(self, width, height):
         """Đặt cửa sổ ở giữa màn hình - cross-platform version"""
         try:
@@ -768,7 +767,7 @@ class App:
             # Tính vị trí căn giữa
             x = (screen_width - width) // 2
             y = (screen_height - height) // 2
-            
+
             # Đặt vị trí cửa sổ sử dụng environment variable (cross-platform)
             import os
             os.environ['SDL_WINDOW_POS'] = f'{x},{y}'
@@ -796,13 +795,13 @@ class App:
     # ---- Layout
     def compute_layout(self):
         screen = self.window_rect
-        
+
         # Scale sidebar width theo tỷ lệ cửa sổ
         scale_factor = min(screen.w / 1920, screen.h / 1080)
         scale_factor = max(0.5, min(1.0, scale_factor))
         scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)
         scaled_panel_w = max(200, scaled_panel_w)
-        
+
         left_space = screen.w - scaled_panel_w
         margin = max(12, int(24 * scale_factor))
         avail_w = left_space - margin*2
@@ -813,7 +812,7 @@ class App:
         maze_w = self.cell_size * MAZE_COLS
         maze_h = self.cell_size * MAZE_ROWS
         self.maze_rect = pygame.Rect((left_space - maze_w)//2 + margin, (screen.h-maze_h)//2, maze_w, maze_h)
-        
+
         # Cập nhật lại kích thước và vị trí các nút game (chỉ khi đã khởi tạo)
         if hasattr(self, 'btn_restart'):
             self.update_game_buttons()
@@ -828,9 +827,10 @@ class App:
 
     def reset_run(self):
         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
-        self.paused = False; self.auto_on=False; self.game_won = False
-        self.maze = make_placeholder_maze(MAZE_COLS, MAZE_ROWS)
-        self.player = [0, 0] # Sửa vị trí bắt đầu của người chơi
+        self.paused = False; self.auto_on=False
+        self.player= [1,1]  # Bắt đầu từ (1,1) thay vì (0,0) vì viền ngoài là tường
+        self.maze = self.MazeGenerated
+        self.prepare_sprites()
         self.modal_victory.hide()
 
     def restart_level(self): self.reset_run()
@@ -851,7 +851,7 @@ class App:
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: self.quit()
-            
+
             # Window dragging - chỉ hoạt động khi không fullscreen
             if not self.is_fullscreen:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -863,14 +863,14 @@ class App:
                             if btn.rect.collidepoint(event.pos):
                                 clicked_button = True
                                 break
-                        
+
                         if not clicked_button:
                             self.dragging = True
                             self.drag_offset = event.pos
 
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     self.dragging = False
-                
+
                 elif event.type == pygame.MOUSEMOTION:
                     if self.dragging:
                         # Di chuyển cửa sổ - simplified cross-platform version
@@ -884,7 +884,7 @@ class App:
                             os.environ['SDL_WINDOW_POS'] = f'{new_x},{new_y}'
                         except:
                             pass
-            
+
             if self.state == "start": self.btn_start.handle_event(event)
             for b in (self.btn_close, self.btn_max, self.btn_min): b.handle_event(event)
             if self.state == "game":
@@ -904,12 +904,13 @@ class App:
 
     def move(self, dx, dy):
         if self.game_won: return  # Không cho di chuyển khi đã thắng
-        
+
         c, r = self.player; nc, nr = c+dx, r+dy
         if 0 <= nc < MAZE_COLS and 0 <= nr < MAZE_ROWS:
-            if self.maze[nr][nc] == 0:
-                self.player=[nc,nr]; self.steps+=1
-                
+            # Cho phép di chuyển trên Path (1), Start (2), và End (3)
+            if self.maze[nr][nc].status in [1, 2, 3]:
+                self.player=[nc,nr]; self.steps += 1
+
                 # Kiểm tra chiến thắng (chạm chuối ở góc phải dưới)
                 if nc == MAZE_COLS-1 and nr == MAZE_ROWS-1:
                     self.game_won = True
@@ -925,23 +926,23 @@ class App:
     def draw_start(self):
         # background full, no blur
         bg = pygame.transform.smoothscale(self.bg_start, (self.window_rect.w, self.window_rect.h))
-        self.screen.blit(bg, (0,0))
-        
+        self.screen.blit(bg, (0, 0))
+
         # Cập nhật kích thước nút START theo tỷ lệ cửa sổ
         base_width = 240  # Kích thước cơ bản
         scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)  # Tỷ lệ so với fullscreen chuẩn
         scale_factor = max(0.5, min(1.0, scale_factor))  # Giới hạn từ 50% đến 100%
-        
+
         new_width = int(base_width * scale_factor)
         start_size = calculate_button_size(self.btn_assets['start'], target_width=new_width)
-        
+
         self.btn_start.rect = pygame.Rect(0, 0, start_size[0], start_size[1])
         self.btn_start.scaled_bg = pygame.transform.smoothscale(self.btn_start.bg_image, start_size)
-        
+
         # place START slightly left and lower (~82% h)
-        self.btn_start.rect.center = (int(self.window_rect.centerx*0.85), int(self.window_rect.h*0.82))
+        self.btn_start.rect.center = (int(self.window_rect.centerx * 0.85), int(self.window_rect.h * 0.82))
         self.btn_start.draw(self.screen)
-        
+
         # Window controls - vẽ cuối cùng để đảm bảo không bị đè
         for b in (self.btn_min, self.btn_max, self.btn_close):
             b.draw(self.screen)
@@ -956,7 +957,7 @@ class App:
         scale_factor = max(0.5, min(1.0, scale_factor))
         scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)
         scaled_panel_w = max(200, scaled_panel_w)
-        
+
         # sidebar card
         sidebar = pygame.Rect(self.window_rect.w-scaled_panel_w+int(10*scale_factor), 60, scaled_panel_w-int(20*scale_factor), self.window_rect.h-70)
         draw_glass_card(self.screen, sidebar, radius=22, bg=(18,24,18,190), border=(110,150,110), border_alpha=70)
@@ -969,7 +970,7 @@ class App:
         time_x = chip1.x + (chip1.width - time_label.get_width()) // 2  # Căn giữa
         time_y = chip1.y + (chip1.height - time_label.get_height()) // 2  # Căn giữa
         self.screen.blit(time_label, (time_x, time_y))
-        
+
         chip2 = pygame.Rect(chip1.right+int(10*scale_factor), y0, int(120*scale_factor), chip_h)
         draw_smooth_rect(self.screen, chip2, (26,34,26,220), radius=18, border=2, border_color=(86,116,86))
         steps_label = self.font_small.render("🚶  "+str(self.steps), True, (235,235,235))
@@ -981,21 +982,21 @@ class App:
         spx = sidebar.x+int(20*scale_factor); cur_y = y0 + chip_h + int(24*scale_factor)
         half_btn_w = (scaled_panel_w - int(48*scale_factor)) // 2
         spacing = max(4, int(8*scale_factor))
-        
+
         # Dòng 1: Restart + Auto
         self.btn_restart.rect.topleft = (spx, cur_y)
         self.btn_auto.rect.topleft = (spx + half_btn_w + 8, cur_y)
         cur_y += max(self.btn_restart.rect.height, self.btn_auto.rect.height) + spacing
-        
+
         # Dòng 2: Play + Pause
         self.btn_play.rect.topleft = (spx, cur_y)
         self.btn_pause.rect.topleft = (spx + half_btn_w + 8, cur_y)
         cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing
-        
+
         # Dòng 3: Dropdown (full width)
         self.dropdown.rect.topleft = (spx, cur_y)
         cur_y += 36 + spacing
-        
+
         # Dòng 4: History + Back
         self.btn_history.rect.topleft = (spx, cur_y)
         self.btn_back.rect.topleft = (spx + half_btn_w + 8, cur_y)
@@ -1010,8 +1011,8 @@ class App:
         cell = self.cell_size
         for r in range(MAZE_ROWS):
             for c in range(MAZE_COLS):
-                x = self.maze_rect.x + c*cell
-                y = self.maze_rect.y + r*cell
+                x = self.maze_rect.x + c * cell
+                y = self.maze_rect.y + r * cell
                 idx = self.floor_map[r][c]
                 # Use pre-scaled cached tiles instead of scaling every frame
                 self.screen.blit(self.scaled_floor_tiles[idx], (x,y))
@@ -1019,19 +1020,19 @@ class App:
         # draw walls using cached scaled tile
         for r in range(MAZE_ROWS):
             for c in range(MAZE_COLS):
-                if self.maze[r][c] == 1:
+                if self.maze[r][c].status == 0:
                     x = self.maze_rect.x + c*cell; y = self.maze_rect.y + r*cell
                     # Use pre-scaled cached wall tile
                     self.screen.blit(self.scaled_wall_tile, (x, y))
 
         # draw player
-        px = self.maze_rect.x + self.player[0]*cell + (cell - self.monkey_idle.current().get_width())//2
-        py = self.maze_rect.y + self.player[1]*cell + (cell - self.monkey_idle.current().get_height())//2
+        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
+        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
         self.screen.blit(self.monkey_idle.current(), (px, py))
 
         # draw banana goal
-        gx = self.maze_rect.x + (MAZE_COLS-1)*cell + (cell - self.banana.base_image.get_width())//2
-        gy = self.maze_rect.y + (MAZE_ROWS-1)*cell + (cell - self.banana.base_image.get_height())//2
+        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
+        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
         self.banana.draw(self.screen, (gx, gy))
 
         # window buttons - vẽ cuối cùng để đảm bảo không bị đè
@@ -1040,7 +1041,7 @@ class App:
 
         # history modal
         self.modal_history.draw(self.screen, self.window_rect, self.font_ui, self.font_small)
-        
+
         # victory modal
         self.modal_victory.draw(self.screen, self.window_rect, self.font_title, self.font_ui)
 
