@@ -193,54 +193,60 @@ class GenerationModel:
         for y in range(self.maze_height):
             for x in range(self.maze_width):
                 if y == 0 or y == self.maze_height - 1 or x == 0 or x == self.maze_width - 1:
-                    self.Maze[y][x].status = 0  # Wall
+                    self.Maze[y][x].status = 0  # Wall (biên)
                 else:
-                    self.Maze[y][x].status = 1  # Path
+                    self.Maze[y][x].status = 1  # Path (bên trong)
+
+        # Bắt đầu chia đệ quy từ khu vực bên trong
         self.__divide(1, 1, self.maze_width - 2, self.maze_height - 2)
 
     def __divide(self, x: int, y: int, width: int, height: int):
         """Đệ quy chia khu vực thành các phần nhỏ hơn"""
+        # Dừng nếu khu vực quá nhỏ để chia
         if width < 2 or height < 2:
             return
 
-        # Chọn hướng chia
-        horizontal = random.choice([True, False])
+        # Chọn hướng chia dựa trên kích thước
+        if width > height:
+            horizontal = False  # Chia dọc khi rộng hơn cao
+        elif height > width:
+            horizontal = True   # Chia ngang khi cao hơn rộng
+        else:
+            horizontal = random.choice([True, False])  # Ngẫu nhiên khi bằng nhau
 
-        if horizontal and height >= 3:
-            # Chia ngang
-            wall_y = y + random.randrange(1, height, 2)
+        if horizontal and height >= 2:
+            # Chia ngang - tạo tường ngang
+            wall_y = y + random.randint(1, height - 1)
 
             # Tạo tường ngang
-            for wx in range(x, x + width):
-                self.Maze[wall_y][wx].status = 0  # Wall
+            for wx in range(x, x + width + 1):
+                if wx < self.maze_width:
+                    self.Maze[wall_y][wx].status = 0  # Wall
 
-            # Tạo lỗ ngẫu nhiên
-            hole_x = x + random.randrange(0, width)
-            if hole_x % 2 == 0:
-                hole_x += 1 if hole_x < x + width - 1 else -1
+            # Tạo một lỗ ngẫu nhiên trong tường
+            hole_x = x + random.randint(0, width - 1)
             self.Maze[wall_y][hole_x].status = 1  # Path
 
             # Đệ quy chia hai phần
             self.__divide(x, y, width, wall_y - y)
-            self.__divide(x, wall_y + 1, width, height - (wall_y - y + 1))
+            self.__divide(x, wall_y + 1, width, y + height - wall_y - 1)
 
-        elif width >= 3:
-            # Chia dọc
-            wall_x = x + random.randrange(1, width, 2)
+        elif not horizontal and width >= 2:
+            # Chia dọc - tạo tường dọc
+            wall_x = x + random.randint(1, width - 1)
 
             # Tạo tường dọc
-            for wy in range(y, y + height):
-                self.Maze[wy][wall_x].status = 0  # Wall
+            for wy in range(y, y + height + 1):
+                if wy < self.maze_height:
+                    self.Maze[wy][wall_x].status = 0  # Wall
 
-            # Tạo lỗ ngẫu nhiên
-            hole_y = y + random.randrange(0, height)
-            if hole_y % 2 == 0:
-                hole_y += 1 if hole_y < y + height - 1 else -1
+            # Tạo một lỗ ngẫu nhiên trong tường
+            hole_y = y + random.randint(0, height - 1)
             self.Maze[hole_y][wall_x].status = 1  # Path
 
             # Đệ quy chia hai phần
             self.__divide(x, y, wall_x - x, height)
-            self.__divide(wall_x + 1, y, width - (wall_x - x + 1), height)
+            self.__divide(wall_x + 1, y, x + width - wall_x - 1, height)
 
 
     def __set_start_end(self):
