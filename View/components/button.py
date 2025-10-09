@@ -43,6 +43,10 @@ class Button:
 
     def draw(self, surface):
         """Draw button on surface"""
+        # Rescale background if size changed
+        if self.bg_image and (not self.scaled_bg or self.scaled_bg.get_size() != self.rect.size):
+            self.scaled_bg = pygame.transform.smoothscale(self.bg_image, self.rect.size)
+        
         if self.bg_image and self.scaled_bg:
             # Draw image background
             if self.hovered and self.enabled:

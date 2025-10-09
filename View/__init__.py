@@ -12,7 +12,7 @@ from View.utils import load_image, draw_shadow, draw_glass_card, draw_smooth_rec
 
 GAME_TITLE = "Monkey's Treasure"
 FULLSCREEN = False
-RIGHT_PANEL_W = 360
+RIGHT_PANEL_W = 420  # Tăng từ 360 lên 420 để có nhiều không gian hơn
 FPS = 60
 # Performance optimization settings
 PERFORMANCE_MODE = False  # Automatically enabled when window is small
@@ -173,55 +173,69 @@ class App:
 
         # Tính toán vị trí sidebar và margin
         sidebar_left = self.window_rect.w - RIGHT_PANEL_W
-        margin = 30  # Margin từ mép sidebar
+        margin = 25  # Margin từ mép sidebar
         cur_y = 120  # Vị trí Y bắt đầu (tránh window controls)
 
         # Chiều rộng các nút
         target_btn_w = RIGHT_PANEL_W - (margin * 2)  # Chiều rộng toàn bộ
-        half_btn_w = (target_btn_w - 10) // 2  # Chiều rộng mỗi nút (2 nút/dòng)
-        btn_gap = 10  # Khoảng cách giữa 2 nút trong cùng 1 dòng
-        row_spacing = 12  # Khoảng cách giữa các dòng
+        btn_h = 45  # Chiều cao cố định cho tất cả các nút
+        row_spacing = 10  # Khoảng cách giữa các dòng
 
         # Vị trí X bắt đầu (căn giữa trong sidebar)
         spx = sidebar_left + margin
 
-        # Tính kích thước các nút giữ nguyên aspect ratio
-        restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)
-        play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
-        pause_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
-        auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)
-        history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)
-        back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)
+        # Dòng 1: Restart button (toàn bộ chiều rộng)
+        self.btn_restart = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+                                  self.restart_level, theme='orange', 
+                                  bg_image=self.btn_assets['restart'], keep_aspect=False)
+        cur_y += btn_h + row_spacing
 
-        # Dòng 1: Restart và Auto
-        row1_height = max(restart_size[1], auto_size[1])
-        self.btn_restart = Button((spx, cur_y, half_btn_w, row1_height), "", self.font_ui, self.restart_level, theme='orange', bg_image=self.btn_assets['restart'], keep_aspect=False)
-        self.btn_auto = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height), "", self.font_ui, self.toggle_auto, theme='blue', bg_image=self.btn_assets['auto'], keep_aspect=False)
-        cur_y += row1_height + row_spacing
+        # Dòng 2: Auto button (toàn bộ chiều rộng)
+        self.btn_auto = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+                              self.toggle_auto, theme='blue', 
+                              bg_image=self.btn_assets['auto'], keep_aspect=False)
+        cur_y += btn_h + row_spacing
 
-        # Dòng 2: Play và Pause
-        row2_height = max(play_size[1], pause_size[1])
-        self.btn_play = Button((spx, cur_y, half_btn_w, row2_height), "", self.font_ui, self.toggle_play, theme='green', bg_image=self.btn_assets['small'], keep_aspect=False)
-        self.btn_pause = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height), "", self.font_ui, self.toggle_play, theme='yellow', bg_image=self.btn_assets['small'], keep_aspect=False)
-        cur_y += row2_height + row_spacing
+        # Dòng 3: Play và Pause (2 nút cạnh nhau)
+        half_btn_w = (target_btn_w - 8) // 2  # Chiều rộng mỗi nút (2 nút/dòng)
+        self.btn_play = Button((spx, cur_y, half_btn_w, btn_h), "", self.font_ui, 
+                              self.toggle_play, theme='green', 
+                              bg_image=self.btn_assets['small'], keep_aspect=False)
+        self.btn_pause = Button((spx + half_btn_w + 8, cur_y, half_btn_w, btn_h), "", 
+                               self.font_ui, self.toggle_play, theme='yellow', 
+                               bg_image=self.btn_assets['small'], keep_aspect=False)
+        cur_y += btn_h + row_spacing + 5  # Thêm khoảng cách trước dropdown
 
-        # Dòng 3: Dropdown (toàn bộ chiều rộng)
-        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="Select Solving Algorithm", on_select=self.set_algo)
-        cur_y += 40 + row_spacing
+        # Dòng 4: Dropdown solving algorithm (chiều rộng đầy đủ)
+        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 42), self.font_small, 
+                                ["BFS","DFS","UCS","A*","Bidirectional"], 
+                                default_text="Solving Algorithm", 
+                                on_select=self.set_algo)
+        cur_y += 42 + row_spacing
 
-        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
-        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Division"], default_text="Select Generation Algorithm", on_select=self.set_generation_algo)
-        cur_y += 40 + row_spacing
+        # Dòng 5: Dropdown generation algorithm (chiều rộng đầy đủ)
+        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 42), self.font_small, 
+                                         ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Div."], 
+                                         default_text="Generation Algorithm", 
+                                         on_select=self.set_generation_algo)
+        cur_y += 42 + row_spacing
 
-        # Dòng 3.6: Nút Generate
-        generate_size = calculate_button_size(self.btn_assets['restart'], target_width=target_btn_w)  # Sử dụng restart asset cho generate
-        self.btn_generate = Button((spx, cur_y, target_btn_w, generate_size[1]), "Generate Maze", self.font_ui, self.generate_maze, theme='green', keep_aspect=False)
-        cur_y += generate_size[1] + row_spacing
+        # Dòng 6: Generate button (toàn bộ chiều rộng)
+        self.btn_generate = Button((spx, cur_y, target_btn_w, btn_h), "Generate Maze", 
+                                  self.font_ui, self.generate_maze, theme='green', 
+                                  keep_aspect=False)
+        cur_y += btn_h + row_spacing + 5  # Thêm khoảng cách trước history/back
 
-        # Dòng 4: History và Back
-        row4_height = max(history_size[1], back_size[1])
-        self.btn_history = Button((spx, cur_y, half_btn_w, row4_height), "", self.font_ui, self.open_history, theme='purple', bg_image=self.btn_assets['history'], keep_aspect=False)
-        self.btn_back = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height), "", self.font_ui, self.goto_start, theme='red', bg_image=self.btn_assets['back'], keep_aspect=False)
+        # Dòng 7: History button (toàn bộ chiều rộng)
+        self.btn_history = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+                                 self.open_history, theme='purple', 
+                                 bg_image=self.btn_assets['history'], keep_aspect=False)
+        cur_y += btn_h + row_spacing
+
+        # Dòng 8: Back button (toàn bộ chiều rộng)
+        self.btn_back = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+                              self.goto_start, theme='red', 
+                              bg_image=self.btn_assets['back'], keep_aspect=False)
 
         # maze
         self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
@@ -295,66 +309,75 @@ class App:
         scale_factor = max(0.5, min(1.0, scale_factor))
 
         scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)
-        scaled_panel_w = max(200, scaled_panel_w)  # Tối thiểu 200px
+        scaled_panel_w = max(240, scaled_panel_w)  # Tăng tối thiểu lên 240px
 
         # Tính toán vị trí sidebar và margin
         sidebar_left = self.window_rect.w - scaled_panel_w
-        margin = int(30 * scale_factor)
+        margin = int(25 * scale_factor)
         margin = max(15, margin)  # Margin tối thiểu
         cur_y = 120
 
         # Chiều rộng các nút
         target_btn_w = scaled_panel_w - (margin * 2)
-        half_btn_w = (target_btn_w - 10) // 2
-        btn_gap = 10
-        row_spacing = max(8, int(12 * scale_factor))
+        btn_h = int(45 * scale_factor)  # Chiều cao nút scale theo cửa sổ
+        btn_h = max(35, btn_h)  # Chiều cao tối thiểu
+        row_spacing = max(8, int(10 * scale_factor))
 
         # Vị trí X bắt đầu
         spx = sidebar_left + margin
 
-        # Tính lại kích thước cho các nút
-        restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)
-        play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
-        pause_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)
-        auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)
-        history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)
-        back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)
+        # Dòng 1: Restart button (toàn bộ chiều rộng)
+        self.btn_restart.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        if self.btn_restart.bg_image:
+            self.btn_restart.scaled_bg = pygame.transform.smoothscale(
+                self.btn_restart.bg_image, (target_btn_w, btn_h))
+        cur_y += btn_h + row_spacing
 
-        # Dòng 1: Restart và Auto
-        row1_height = max(restart_size[1], auto_size[1])
-        self.btn_restart.rect = pygame.Rect(spx, cur_y, half_btn_w, row1_height)
-        self.btn_restart.scaled_bg = pygame.transform.smoothscale(self.btn_restart.bg_image, (half_btn_w, row1_height))
-        self.btn_auto.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height)
-        self.btn_auto.scaled_bg = pygame.transform.smoothscale(self.btn_auto.bg_image, (half_btn_w, row1_height))
-        cur_y += row1_height + row_spacing
+        # Dòng 2: Auto button (toàn bộ chiều rộng)
+        self.btn_auto.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        if self.btn_auto.bg_image:
+            self.btn_auto.scaled_bg = pygame.transform.smoothscale(
+                self.btn_auto.bg_image, (target_btn_w, btn_h))
+        cur_y += btn_h + row_spacing
 
-        # Dòng 2: Play và Pause
-        row2_height = max(play_size[1], pause_size[1])
-        self.btn_play.rect = pygame.Rect(spx, cur_y, half_btn_w, row2_height)
-        self.btn_play.scaled_bg = pygame.transform.smoothscale(self.btn_play.bg_image, (half_btn_w, row2_height))
-        self.btn_pause.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height)
-        self.btn_pause.scaled_bg = pygame.transform.smoothscale(self.btn_pause.bg_image, (half_btn_w, row2_height))
-        cur_y += row2_height + row_spacing
+        # Dòng 3: Play và Pause (2 nút cạnh nhau)
+        half_btn_w = (target_btn_w - 8) // 2
+        self.btn_play.rect = pygame.Rect(spx, cur_y, half_btn_w, btn_h)
+        if self.btn_play.bg_image:
+            self.btn_play.scaled_bg = pygame.transform.smoothscale(
+                self.btn_play.bg_image, (half_btn_w, btn_h))
+        self.btn_pause.rect = pygame.Rect(spx + half_btn_w + 8, cur_y, half_btn_w, btn_h)
+        if self.btn_pause.bg_image:
+            self.btn_pause.scaled_bg = pygame.transform.smoothscale(
+                self.btn_pause.bg_image, (half_btn_w, btn_h))
+        cur_y += btn_h + row_spacing + 5
 
-        # Dòng 3: Dropdown
-        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
-        cur_y += 40 + row_spacing
+        # Dòng 4: Dropdown solving algorithm
+        dropdown_h = int(42 * scale_factor)
+        dropdown_h = max(35, dropdown_h)
+        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, dropdown_h)
+        cur_y += dropdown_h + row_spacing
 
-        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
-        self.maze_gen_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
-        cur_y += 40 + row_spacing
+        # Dòng 5: Dropdown generation algorithm
+        self.maze_gen_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, dropdown_h)
+        cur_y += dropdown_h + row_spacing
 
-        # Dòng 3.6: Nút Generate
-        generate_size = calculate_button_size(self.btn_assets['restart'], target_width=target_btn_w)  # Sử dụng restart asset cho generate
-        self.btn_generate.rect = pygame.Rect(spx, cur_y, target_btn_w, generate_size[1])
-        cur_y += generate_size[1] + row_spacing
+        # Dòng 6: Generate button (toàn bộ chiều rộng)
+        self.btn_generate.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        cur_y += btn_h + row_spacing + 5
 
-        # Dòng 4: History và Back
-        row4_height = max(history_size[1], back_size[1])
-        self.btn_history.rect = pygame.Rect(spx, cur_y, half_btn_w, row4_height)
-        self.btn_history.scaled_bg = pygame.transform.smoothscale(self.btn_history.bg_image, (half_btn_w, row4_height))
-        self.btn_back.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height)
-        self.btn_back.scaled_bg = pygame.transform.smoothscale(self.btn_back.bg_image, (half_btn_w, row4_height))
+        # Dòng 7: History button (toàn bộ chiều rộng)
+        self.btn_history.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        if self.btn_history.bg_image:
+            self.btn_history.scaled_bg = pygame.transform.smoothscale(
+                self.btn_history.bg_image, (target_btn_w, btn_h))
+        cur_y += btn_h + row_spacing
+
+        # Dòng 8: Back button (toàn bộ chiều rộng)
+        self.btn_back.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        if self.btn_back.bg_image:
+            self.btn_back.scaled_bg = pygame.transform.smoothscale(
+                self.btn_back.bg_image, (target_btn_w, btn_h))
 
     def hide_window(self):
         """Ẩn cửa sổ xuống taskbar (iconify)"""
@@ -697,39 +720,60 @@ class App:
         steps_y = chip2.y + (chip2.height - steps_label.get_height()) // 2  # Căn giữa
         self.screen.blit(steps_label, (steps_x, steps_y))
 
-        # buttons - cập nhật vị trí theo layout mới (2 nút/dòng)
+        # buttons - layout mới: mỗi nút chính một hàng riêng
         spx = sidebar.x+int(20*scale_factor); cur_y = y0 + chip_h + int(24*scale_factor)
-        half_btn_w = (scaled_panel_w - int(48*scale_factor)) // 2
-        spacing = max(4, int(8*scale_factor))
+        full_btn_w = scaled_panel_w - int(40*scale_factor)  # Chiều rộng đầy đủ cho nút
+        half_btn_w = (full_btn_w - int(8*scale_factor)) // 2  # Chiều rộng cho 2 nút (Play/Pause)
+        spacing = max(8, int(10*scale_factor))
 
-        # Dòng 1: Restart + Auto
+        # Dòng 1: Restart button (full width)
         self.btn_restart.rect.topleft = (spx, cur_y)
-        self.btn_auto.rect.topleft = (spx + half_btn_w + 8, cur_y)
-        cur_y += max(self.btn_restart.rect.height, self.btn_auto.rect.height) + spacing
+        self.btn_restart.rect.width = full_btn_w
+        self.btn_restart.draw(self.screen)
+        cur_y += self.btn_restart.rect.height + spacing
 
-        # Dòng 2: Play + Pause
+        # Dòng 2: Auto button (full width)
+        self.btn_auto.rect.topleft = (spx, cur_y)
+        self.btn_auto.rect.width = full_btn_w
+        self.btn_auto.draw(self.screen)
+        cur_y += self.btn_auto.rect.height + spacing
+
+        # Dòng 3: Play và Pause (2 nút cạnh nhau)
         self.btn_play.rect.topleft = (spx, cur_y)
+        self.btn_play.rect.width = half_btn_w
+        self.btn_play.draw(self.screen)
+        
         self.btn_pause.rect.topleft = (spx + half_btn_w + 8, cur_y)
-        cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing
+        self.btn_pause.rect.width = half_btn_w
+        self.btn_pause.draw(self.screen)
+        cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing + 5
 
-        # Dòng 3: Dropdown (full width)
+        # Dòng 4: Dropdown solving algorithm (full width)
         self.dropdown.rect.topleft = (spx, cur_y)
-        cur_y += 36 + spacing
+        self.dropdown.rect.width = full_btn_w
+        cur_y += self.dropdown.rect.height + spacing
 
-        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
+        # Dòng 5: Dropdown generation algorithm (full width)
         self.maze_gen_dropdown.rect.topleft = (spx, cur_y)
-        cur_y += 36 + spacing
+        self.maze_gen_dropdown.rect.width = full_btn_w
+        cur_y += self.maze_gen_dropdown.rect.height + spacing
 
-        # Dòng 3.6: Nút Generate
+        # Dòng 6: Generate button (full width)
         self.btn_generate.rect.topleft = (spx, cur_y)
-        cur_y += self.btn_generate.rect.height + spacing
-
-        # Dòng 4: History + Back
-        self.btn_history.rect.topleft = (spx, cur_y)
-        self.btn_back.rect.topleft = (spx + half_btn_w + 8, cur_y)
-        for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back):
-            b.draw(self.screen)
+        self.btn_generate.rect.width = full_btn_w
         self.btn_generate.draw(self.screen)
+        cur_y += self.btn_generate.rect.height + spacing + 5
+
+        # Dòng 7: History button (full width)
+        self.btn_history.rect.topleft = (spx, cur_y)
+        self.btn_history.rect.width = full_btn_w
+        self.btn_history.draw(self.screen)
+        cur_y += self.btn_history.rect.height + spacing
+
+        # Dòng 8: Back button (full width)
+        self.btn_back.rect.topleft = (spx, cur_y)
+        self.btn_back.rect.width = full_btn_w
+        self.btn_back.draw(self.screen)
 
         # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác
         self.dropdown.draw(self.screen)
