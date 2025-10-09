@@ -37,9 +37,9 @@ class GenerationModel:
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            # Sửa lỗi: self.width -> self.maze_width, self.height -> self.height_width
             if 0 <= nx < self.maze_width and 0 <= ny < self.height_width:
-                neighbors
+                neighbors.append((nx, ny)) # Sửa lỗi: Thêm láng giềng vào danh sách
+        return neighbors
 
     def DFS(self, start_x: int, start_y: int):
         """Thuật toán Depth-First Search để sinh mê cung"""
@@ -50,10 +50,10 @@ class GenerationModel:
             current_x, current_y = stack[-1]
             neighbors = []
 
-            # Tìm các ô láng giềng chưa thăm (status = 0)
-            for nx, ny in self.__get_neighbors(current_x, current_y):
+            # Sửa lỗi: truyền đúng tham số distance
+            for nx, ny in self.__get_neighbors(current_x, current_y, 2):
                 if self.grid[ny][nx].status == 0:
-                    neighbors.append((nx, ny))
+                    neighbors.append(nx, ny)
 
             if neighbors:
                 # Chọn ngẫu nhiên một láng giềng
@@ -341,15 +341,12 @@ class SolvingModel:
         """Hàm heuristic cho A* (Manhattan distance)"""
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
-    def reconstruct_path(self, came_from: Dict[Tuple[int, int], Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def reconstruct_path(self, came_from: Dict[Tuple[int, int], Tuple[int, int]], current: Tuple[int, int]) -> List[Tuple[int, int]]:
         """Tái tạo đường đi từ came_from dictionary"""
         path = []
-        current = self.end_pos
-
         while current is not None:
             path.append(current)
             current = came_from.get(current)
-
         path.reverse()
         return path
 
@@ -522,22 +519,12 @@ class SolvingModel:
                 self.nodes_expanded += 1
 
                 # Kiểm tra giao điểm
+            # Sửa lỗi logic tái tạo đường đi
                 if current_start in visited_end:
-                    # Tái tạo đường đi
-                    path_start = []
-                    node = current_start
-                    while node is not None:
-                        path_start.append(node)
-                        node = came_from_start.get(node)
-                    path_start.reverse()
-
-                    path_end = []
-                    node = came_from_end[current_start]
-                    while node is not None:
-                        path_end.append(node)
-                        node = came_from_end.get(node)
-
-                    self.solution_path = path_start + path_end
+                    self.solution_path = self.reconstruct_path(came_from_start, current_start)
+                    path_end = self.reconstruct_path(came_from_end, current_start)
+                    path_end.reverse()
+                    self.solution_path.extend(path_end[1:])
                     self.path_length = len(self.solution_path)
                     return True
 
