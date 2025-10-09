@@ -5,7 +5,7 @@ class Node_Cell:
         self.status = status
         self.visited = visited
         self.g_cost = g_cost
-        self.h_cost = h_cost  # Sửa lỗi: gán đúng h_cost
+        self.h_cost = g_cost
         self.f_cost = g_cost + h_cost
 
     def get_position(self):
@@ -20,7 +20,7 @@ class Node_Cell:
     def get_g_cost(self):
         return self.g_cost
 
-    def get_h_cost(self): # Thêm phương thức bị thiếu
+    def get_h_cost(self):
         return self.h_cost
 
     def get_f_cost(self):
