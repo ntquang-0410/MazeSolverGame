@@ -10,7 +10,7 @@ from View.utils import draw_shadow, draw_smooth_rect
 class Dropdown:
     """Dropdown menu component for algorithm selection"""
     
-    def __init__(self, rect, font, options, default_text="None", on_select=None):
+    def __init__(self, rect, font, options, default_text="None", on_select=None, bg_image=None):
         self.rect = pygame.Rect(rect)
         self.font = font
         self.options = options[:]
@@ -18,6 +18,7 @@ class Dropdown:
         self.selected = None
         self.default_text = default_text
         self.on_select = on_select
+        self.bg_image = bg_image  # Background image asset
         
         # Click debounce for better responsiveness
         self.last_click_time = 0
@@ -31,7 +32,12 @@ class Dropdown:
         # Performance mode check
         performance_mode = hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False)
 
-        if performance_mode:
+        # Draw background
+        if self.bg_image:
+            # Scale background image to fit rect
+            bg_scaled = pygame.transform.scale(self.bg_image, (self.rect.w, self.rect.h))
+            surface.blit(bg_scaled, self.rect.topleft)
+        elif performance_mode:
             # Simple drawing for performance
             pygame.draw.rect(surface, bg, self.rect, border_radius=8)
             pygame.draw.rect(surface, border, self.rect, 2, border_radius=8)

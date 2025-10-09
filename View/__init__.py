@@ -7,11 +7,12 @@ from Model import GenerationModel, SolvingModel
 from View.components import Button, Dropdown, ModalHistory, ModalVictory
 from View.sprites import FloatingBanana, MonkeyIdle
 from View.utils import load_image, draw_shadow, draw_glass_card, draw_smooth_rect, try_load_font, calculate_button_size
+from View.particle import ParticleSystem
 #from Controller import MazeController
 
 
 GAME_TITLE = "Monkey's Treasure"
-FULLSCREEN = False
+FULLSCREEN = True  # Game khởi động ở chế độ fullscreen
 RIGHT_PANEL_W = 420  # Tăng từ 360 lên 420 để có nhiều không gian hơn
 FPS = 60
 # Performance optimization settings
@@ -92,6 +93,15 @@ class App:
             'win_restart': load_image(IMG("button/win_restart_btn.png"))
         }
 
+        # box assets - UI boxes cho time, steps, algorithm
+        self.box_assets = {
+            'time': load_image(IMG("box/time_box.png")),
+            'step': load_image(IMG("box/step_box.png")),
+            'algorithm': load_image(IMG("box/algorithm_box.png")),
+            'algorithm_choice': load_image(IMG("box/algorithm_choice_box.png")),
+            'menu': load_image(IMG("box/menu_box.png"))
+        }
+
         # floor tiles
         self.floor_tiles = []
         tiles_dir = os.path.join(ASSETS, "tiles")
@@ -103,6 +113,7 @@ class App:
         self.font_title = try_load_font(64)
         self.font_ui = try_load_font(26)
         self.font_small = try_load_font(20)
+        self.font_chip = try_load_font(28)  # Font lớn hơn cho time/step boxes (jungle theme)
 
         # state
         self.state = "start"
@@ -117,6 +128,16 @@ class App:
         self.modal_history = ModalHistory(lambda: self.history)
         self.modal_victory = ModalVictory(self.restart_level)
         self.modal_victory.win_restart_img = self.btn_assets['win_restart']
+        
+        # Maze generation animation
+        self.generating_maze = False
+        self.generation_model = None
+        self.generation_timer = 0.0
+        self.generation_speed = 0.01  # Seconds per step (tăng từ 0.003 lên 0.015 để chậm hơn, dễ quan sát)
+        
+        # Particle effects for wall breaking
+        self.particle_system = ParticleSystem()
+        self.last_broken_cells = []  # Track recently broken cells for particle emission
 
         # Lưu kích thước windowed và trạng thái fullscreen
         self.windowed_size = (1024, 768)  # Kích thước khi không full màn hình
@@ -165,7 +186,7 @@ class App:
         )
 
         # start screen - tăng kích thước nút start
-        start_size = calculate_button_size(self.btn_assets['start'], target_width=240)  # Tăng từ 180 lên 240
+        start_size = calculate_button_size(self.btn_assets['start'], target_width=320)  # Tăng từ 240 lên 320
         self.btn_start = Button((0, 0, start_size[0], start_size[1]), "", self.font_ui, self.goto_game, theme='green', bg_image=self.btn_assets['start'], keep_aspect=False)
 
         # game UI
@@ -176,66 +197,99 @@ class App:
         margin = 25  # Margin từ mép sidebar
         cur_y = 120  # Vị trí Y bắt đầu (tránh window controls)
 
-        # Chiều rộng các nút
-        target_btn_w = RIGHT_PANEL_W - (margin * 2)  # Chiều rộng toàn bộ
-        btn_h = 45  # Chiều cao cố định cho tất cả các nút
+        # Tính toán sidebar card thực tế (giống như trong draw_game)
+        # sidebar card có margin 10px từ mép và width nhỏ hơn 20px
+        sidebar_card_x = sidebar_left + 10  # +10px margin
+        sidebar_card_w = RIGHT_PANEL_W - 20  # -20px margin (10px mỗi bên)
+
+        # Chiều rộng các nút - giảm margin để nút lớn hơn
+        side_margin = 10  # Margin rất nhỏ để nút tối đa hóa kích thước
+        target_btn_w = sidebar_card_w - (side_margin * 2)  # Chiều rộng tối đa
+        max_btn_h = 110  # Chiều cao tối đa (tăng từ 90 lên 110)
         row_spacing = 10  # Khoảng cách giữa các dòng
 
         # Vị trí X bắt đầu (căn giữa trong sidebar)
-        spx = sidebar_left + margin
+        spx = sidebar_left + side_margin
 
-        # Dòng 1: Restart button (toàn bộ chiều rộng)
-        self.btn_restart = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+        # Helper function để tính kích thước nút với giới hạn chiều cao
+        def get_button_size(asset, target_width, max_height=max_btn_h):
+            size = calculate_button_size(asset, target_width=target_width)
+            if size[1] > max_height:
+                # Nếu cao quá, scale lại dựa trên chiều cao tối đa
+                size = calculate_button_size(asset, target_height=max_height)
+            return size
+
+        # Tính kích thước nút giữ nguyên aspect ratio từ asset
+        restart_size = get_button_size(self.btn_assets['restart'], target_btn_w)
+        auto_size = get_button_size(self.btn_assets['auto'], target_btn_w)
+        half_btn_w = (target_btn_w - 8) // 2
+        play_size = get_button_size(self.btn_assets['small'], half_btn_w)
+        # Generate button không dùng background image, tính kích thước dựa trên text
+        generate_w = target_btn_w
+        generate_h = 55  # Chiều cao cố định phù hợp với text
+        generate_size = (generate_w, generate_h)
+        history_size = get_button_size(self.btn_assets['history'], target_btn_w)
+        back_size = get_button_size(self.btn_assets['back'], target_btn_w)
+
+        # Dòng 1: Restart button (căn giữa trong sidebar card)
+        restart_x = sidebar_card_x + (sidebar_card_w - restart_size[0]) // 2
+        self.btn_restart = Button((restart_x, cur_y, restart_size[0], restart_size[1]), "", self.font_ui, 
                                   self.restart_level, theme='orange', 
-                                  bg_image=self.btn_assets['restart'], keep_aspect=False)
-        cur_y += btn_h + row_spacing
+                                  bg_image=self.btn_assets['restart'], keep_aspect=True)
+        cur_y += restart_size[1] + row_spacing
 
-        # Dòng 2: Auto button (toàn bộ chiều rộng)
-        self.btn_auto = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+        # Dòng 2: Auto button (căn giữa trong sidebar card)
+        auto_x = sidebar_card_x + (sidebar_card_w - auto_size[0]) // 2
+        self.btn_auto = Button((auto_x, cur_y, auto_size[0], auto_size[1]), "", self.font_ui, 
                               self.toggle_auto, theme='blue', 
-                              bg_image=self.btn_assets['auto'], keep_aspect=False)
-        cur_y += btn_h + row_spacing
+                              bg_image=self.btn_assets['auto'], keep_aspect=True)
+        cur_y += auto_size[1] + row_spacing
 
-        # Dòng 3: Play và Pause (2 nút cạnh nhau)
-        half_btn_w = (target_btn_w - 8) // 2  # Chiều rộng mỗi nút (2 nút/dòng)
-        self.btn_play = Button((spx, cur_y, half_btn_w, btn_h), "", self.font_ui, 
+        # Dòng 3: Play và Pause (2 nút căn giữa trong sidebar card)
+        total_play_width = play_size[0] * 2 + 8  # Tổng chiều rộng 2 nút + khoảng cách
+        play_start_x = sidebar_card_x + (sidebar_card_w - total_play_width) // 2
+        self.btn_play = Button((play_start_x, cur_y, play_size[0], play_size[1]), "", self.font_ui, 
                               self.toggle_play, theme='green', 
-                              bg_image=self.btn_assets['small'], keep_aspect=False)
-        self.btn_pause = Button((spx + half_btn_w + 8, cur_y, half_btn_w, btn_h), "", 
+                              bg_image=self.btn_assets['small'], keep_aspect=True)
+        self.btn_pause = Button((play_start_x + play_size[0] + 8, cur_y, play_size[0], play_size[1]), "", 
                                self.font_ui, self.toggle_play, theme='yellow', 
-                               bg_image=self.btn_assets['small'], keep_aspect=False)
-        cur_y += btn_h + row_spacing + 5  # Thêm khoảng cách trước dropdown
+                               bg_image=self.btn_assets['small'], keep_aspect=True)
+        cur_y += play_size[1] + row_spacing + 5  # Thêm khoảng cách trước dropdown
 
-        # Dòng 4: Dropdown solving algorithm (chiều rộng đầy đủ)
-        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 42), self.font_small, 
+        # Dòng 4: Dropdown solving algorithm (căn giữa trong sidebar card)
+        dropdown_x = sidebar_card_x + (sidebar_card_w - target_btn_w) // 2
+        self.dropdown = Dropdown((dropdown_x, cur_y, target_btn_w, 42), self.font_small, 
                                 ["BFS","DFS","UCS","A*","Bidirectional"], 
                                 default_text="Solving Algorithm", 
                                 on_select=self.set_algo)
         cur_y += 42 + row_spacing
 
-        # Dòng 5: Dropdown generation algorithm (chiều rộng đầy đủ)
-        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 42), self.font_small, 
+        # Dòng 5: Dropdown generation algorithm (căn giữa trong sidebar card)
+        self.maze_gen_dropdown = Dropdown((dropdown_x, cur_y, target_btn_w, 42), self.font_small, 
                                          ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Div."], 
                                          default_text="Generation Algorithm", 
                                          on_select=self.set_generation_algo)
         cur_y += 42 + row_spacing
 
-        # Dòng 6: Generate button (toàn bộ chiều rộng)
-        self.btn_generate = Button((spx, cur_y, target_btn_w, btn_h), "Generate Maze", 
+        # Dòng 6: Generate button (căn giữa trong sidebar card)
+        generate_x = sidebar_card_x + (sidebar_card_w - generate_size[0]) // 2
+        self.btn_generate = Button((generate_x, cur_y, generate_size[0], generate_size[1]), "Generate Maze", 
                                   self.font_ui, self.generate_maze, theme='green', 
-                                  keep_aspect=False)
-        cur_y += btn_h + row_spacing + 5  # Thêm khoảng cách trước history/back
+                                  keep_aspect=False)  # Không keep aspect vì không có bg_image
+        cur_y += generate_size[1] + row_spacing + 5  # Thêm khoảng cách trước history/back
 
-        # Dòng 7: History button (toàn bộ chiều rộng)
-        self.btn_history = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+        # Dòng 7: History button (căn giữa trong sidebar card)
+        history_x = sidebar_card_x + (sidebar_card_w - history_size[0]) // 2
+        self.btn_history = Button((history_x, cur_y, history_size[0], history_size[1]), "", self.font_ui, 
                                  self.open_history, theme='purple', 
-                                 bg_image=self.btn_assets['history'], keep_aspect=False)
-        cur_y += btn_h + row_spacing
+                                 bg_image=self.btn_assets['history'], keep_aspect=True)
+        cur_y += history_size[1] + row_spacing
 
-        # Dòng 8: Back button (toàn bộ chiều rộng)
-        self.btn_back = Button((spx, cur_y, target_btn_w, btn_h), "", self.font_ui, 
+        # Dòng 8: Back button (căn giữa trong sidebar card)
+        back_x = sidebar_card_x + (sidebar_card_w - back_size[0]) // 2
+        self.btn_back = Button((back_x, cur_y, back_size[0], back_size[1]), "", self.font_ui, 
                               self.goto_start, theme='red', 
-                              bg_image=self.btn_assets['back'], keep_aspect=False)
+                              bg_image=self.btn_assets['back'], keep_aspect=True)
 
         # maze
         self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
@@ -313,71 +367,87 @@ class App:
 
         # Tính toán vị trí sidebar và margin
         sidebar_left = self.window_rect.w - scaled_panel_w
-        margin = int(25 * scale_factor)
-        margin = max(15, margin)  # Margin tối thiểu
+        
+        # Tính toán sidebar card thực tế (giống như trong draw_game)
+        sidebar_card_margin = int(10 * scale_factor)  # Margin của sidebar card
+        sidebar_card_x = sidebar_left + sidebar_card_margin
+        sidebar_card_w = scaled_panel_w - (sidebar_card_margin * 2)
+        
+        side_margin = int(10 * scale_factor)  # Margin các nút trong sidebar
+        side_margin = max(8, side_margin)  # Margin tối thiểu
         cur_y = 120
 
         # Chiều rộng các nút
-        target_btn_w = scaled_panel_w - (margin * 2)
-        btn_h = int(45 * scale_factor)  # Chiều cao nút scale theo cửa sổ
-        btn_h = max(35, btn_h)  # Chiều cao tối thiểu
-        row_spacing = max(8, int(10 * scale_factor))
+        target_btn_w = sidebar_card_w - (side_margin * 2)
+        row_spacing = max(6, int(8 * scale_factor))  # Giảm từ 10 xuống 8
+        
+        # Chiều cao cố định cho tất cả các nút để đồng nhất
+        target_btn_h = int(85 * scale_factor)  
+        target_btn_h = max(70, target_btn_h)
 
-        # Vị trí X bắt đầu
-        spx = sidebar_left + margin
+        # Tính kích thước riêng cho từng nút trước
+        restart_size_temp = calculate_button_size(self.btn_assets['restart'], target_height=target_btn_h)
+        auto_size_temp = calculate_button_size(self.btn_assets['auto'], target_height=target_btn_h)
+        
+        # Lấy chiều rộng lớn nhất để tất cả các nút restart và auto có cùng kích thước
+        max_width = max(restart_size_temp[0], auto_size_temp[0])
+        restart_size = (max_width, target_btn_h)
+        auto_size = (max_width, target_btn_h)
+        
+        # Generate button không dùng background image, tính kích thước dựa trên text
+        generate_w = target_btn_w
+        generate_h = int(50 * scale_factor)  # Giảm từ 55 xuống 50
+        generate_h = max(40, generate_h)  # Giảm từ 45 xuống 40
+        generate_size = (generate_w, generate_h)
+        history_size = calculate_button_size(self.btn_assets['history'], target_height=target_btn_h)
+        back_size = calculate_button_size(self.btn_assets['back'], target_height=target_btn_h)
 
-        # Dòng 1: Restart button (toàn bộ chiều rộng)
-        self.btn_restart.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        # Dòng 1: Restart button (căn giữa trong sidebar card)
+        restart_x = sidebar_card_x + (sidebar_card_w - restart_size[0]) // 2
+        self.btn_restart.rect = pygame.Rect(restart_x, cur_y, restart_size[0], restart_size[1])
         if self.btn_restart.bg_image:
             self.btn_restart.scaled_bg = pygame.transform.smoothscale(
-                self.btn_restart.bg_image, (target_btn_w, btn_h))
-        cur_y += btn_h + row_spacing
+                self.btn_restart.bg_image, restart_size)
+        cur_y += restart_size[1] + row_spacing
 
-        # Dòng 2: Auto button (toàn bộ chiều rộng)
-        self.btn_auto.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        # Dòng 2: Auto button (căn giữa trong sidebar card)
+        auto_x = sidebar_card_x + (sidebar_card_w - auto_size[0]) // 2
+        self.btn_auto.rect = pygame.Rect(auto_x, cur_y, auto_size[0], auto_size[1])
         if self.btn_auto.bg_image:
             self.btn_auto.scaled_bg = pygame.transform.smoothscale(
-                self.btn_auto.bg_image, (target_btn_w, btn_h))
-        cur_y += btn_h + row_spacing
+                self.btn_auto.bg_image, auto_size)
+        cur_y += auto_size[1] + row_spacing
 
-        # Dòng 3: Play và Pause (2 nút cạnh nhau)
-        half_btn_w = (target_btn_w - 8) // 2
-        self.btn_play.rect = pygame.Rect(spx, cur_y, half_btn_w, btn_h)
-        if self.btn_play.bg_image:
-            self.btn_play.scaled_bg = pygame.transform.smoothscale(
-                self.btn_play.bg_image, (half_btn_w, btn_h))
-        self.btn_pause.rect = pygame.Rect(spx + half_btn_w + 8, cur_y, half_btn_w, btn_h)
-        if self.btn_pause.bg_image:
-            self.btn_pause.scaled_bg = pygame.transform.smoothscale(
-                self.btn_pause.bg_image, (half_btn_w, btn_h))
-        cur_y += btn_h + row_spacing + 5
-
-        # Dòng 4: Dropdown solving algorithm
+        # Dòng 3: Dropdown solving algorithm (căn giữa trong sidebar card)
         dropdown_h = int(42 * scale_factor)
         dropdown_h = max(35, dropdown_h)
-        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, dropdown_h)
+        dropdown_x = sidebar_card_x + (sidebar_card_w - target_btn_w) // 2
+        self.dropdown.rect = pygame.Rect(dropdown_x, cur_y, target_btn_w, dropdown_h)
         cur_y += dropdown_h + row_spacing
 
-        # Dòng 5: Dropdown generation algorithm
-        self.maze_gen_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, dropdown_h)
+        # Dòng 4: Dropdown generation algorithm (căn giữa trong sidebar card)
+        self.maze_gen_dropdown.rect = pygame.Rect(dropdown_x, cur_y, target_btn_w, dropdown_h)
         cur_y += dropdown_h + row_spacing
 
-        # Dòng 6: Generate button (toàn bộ chiều rộng)
-        self.btn_generate.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
-        cur_y += btn_h + row_spacing + 5
+        # Dòng 5: Generate button (căn giữa trong sidebar card)
+        generate_x = sidebar_card_x + (sidebar_card_w - generate_size[0]) // 2
+        self.btn_generate.rect = pygame.Rect(generate_x, cur_y, generate_size[0], generate_size[1])
+        cur_y += generate_size[1] + row_spacing
 
-        # Dòng 7: History button (toàn bộ chiều rộng)
-        self.btn_history.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        # Dòng 6: History button (căn giữa trong sidebar card)
+        history_x = sidebar_card_x + (sidebar_card_w - history_size[0]) // 2
+        self.btn_history.rect = pygame.Rect(history_x, cur_y, history_size[0], history_size[1])
         if self.btn_history.bg_image:
             self.btn_history.scaled_bg = pygame.transform.smoothscale(
-                self.btn_history.bg_image, (target_btn_w, btn_h))
-        cur_y += btn_h + row_spacing
+                self.btn_history.bg_image, history_size)
+        cur_y += history_size[1] + row_spacing
 
-        # Dòng 8: Back button (toàn bộ chiều rộng)
-        self.btn_back.rect = pygame.Rect(spx, cur_y, target_btn_w, btn_h)
+        # Dòng 7: Back button (căn giữa trong sidebar card)
+        back_x = sidebar_card_x + (sidebar_card_w - back_size[0]) // 2
+        self.btn_back.rect = pygame.Rect(back_x, cur_y, back_size[0], back_size[1])
         if self.btn_back.bg_image:
             self.btn_back.scaled_bg = pygame.transform.smoothscale(
-                self.btn_back.bg_image, (target_btn_w, btn_h))
+                self.btn_back.bg_image, back_size)
 
     def hide_window(self):
         """Ẩn cửa sổ xuống taskbar (iconify)"""
@@ -527,25 +597,34 @@ class App:
         self.selected_generation_algo = name
 
     def generate_maze(self):
-        """Sinh mê cung mới dựa trên thuật toán được chọn"""
+        """Sinh mê cung mới với hiệu ứng animation"""
         if not hasattr(self, 'selected_generation_algo') or self.selected_generation_algo is None:
             return
 
-        # Tạo model mới và set thuật toán
-        generation_model = GenerationModel(MAZE_COLS, MAZE_ROWS, self.selected_generation_algo)
-
-        # Sinh mê cung
-        self.MazeGenerated = generation_model.generate_maze()
-        self.maze = self.MazeGenerated
-
-        # Reset lại vị trí người chơi về start position
+        # Clear old particles
+        self.particle_system.clear()
+        
+        # Tạo model với animation enabled
+        self.generation_model = GenerationModel(MAZE_COLS, MAZE_ROWS, self.selected_generation_algo)
+        self.generation_model.animated_generation = True
+        
+        # Generate maze để tạo animation steps
+        # Model sẽ tự động khởi tạo maze về trạng thái ban đầu khi animated_generation = True
+        self.generation_model.generate_maze()
+        
+        # Copy maze trạng thái ban đầu từ model
+        self.maze = self.generation_model.Maze
+        
+        # Bắt đầu animation
+        self.generating_maze = True
+        self.generation_timer = 0.0
+        
+        # Reset game state
         self.player = [1, 1]
-
-        # Reset game state nhưng không gọi reset_run() để tránh lặp
         self.steps = 0
         self.timer = 0.0
         self.start_time = time.time()
-        self.paused = False
+        self.paused = True  # Pause trong lúc đang generate
         self.game_won = False
 
         # Cập nhật sprites và invalidate cache
@@ -637,6 +716,87 @@ class App:
 
     # ---- Update / Draw
     def update(self, dt):
+        # Update particle system
+        self.particle_system.update(dt)
+        
+        # Update maze generation animation
+        if self.generating_maze:
+            self.generation_timer += dt
+            
+            # Apply multiple steps per frame for smoother animation (giảm xuống để chậm hơn)
+            steps_per_frame = max(1, int(0.016 / self.generation_speed)) if self.generation_speed > 0 else 1
+            
+            for _ in range(steps_per_frame):
+                if self.generation_model and self.generation_model.current_step < len(self.generation_model.generation_steps):
+                    # Get current step info BEFORE applying
+                    current_step_idx = self.generation_model.current_step
+                    if current_step_idx < len(self.generation_model.generation_steps):
+                        x, y, action = self.generation_model.generation_steps[current_step_idx]
+                        
+                        # Apply next step
+                        has_more = self.generation_model.apply_next_step()
+                        
+                        # Emit particles based on action
+                        if self.maze_rect and self.cell_size:
+                            # Calculate screen position
+                            screen_x = self.maze_rect.x + x * self.cell_size + self.cell_size // 2
+                            screen_y = self.maze_rect.y + y * self.cell_size + self.cell_size // 2
+                            
+                            if action == 'break_wall':
+                                # Wall breaking - dramatic effect
+                                self.particle_system.emit_wall_break(screen_x, screen_y, self.cell_size)
+                            elif action == 'path':
+                                # Path creation - subtle effect
+                                self.particle_system.emit_path_creation(screen_x, screen_y, self.cell_size)
+                            elif action == 'build_wall':
+                                # Building wall - different color particles
+                                self.particle_system.emit_path_creation(
+                                    screen_x, screen_y, self.cell_size, 
+                                    path_color=(150, 100, 100)
+                                )
+                    
+                    # Copy updated maze state
+                    self.maze = self.generation_model.Maze
+                    
+                    if not has_more:
+                        # Animation complete - set start and end positions
+                        self.generating_maze = False
+                        self.paused = False
+                        
+                        # Find and set start position (first path cell)
+                        start_found = False
+                        for y in range(MAZE_ROWS):
+                            for x in range(MAZE_COLS):
+                                if self.maze[y][x].status == 1:
+                                    self.maze[y][x].status = 2  # Start
+                                    self.player = [x, y]
+                                    start_found = True
+                                    break
+                            if start_found:
+                                break
+                        
+                        # Find and set end position (last path cell)
+                        end_found = False
+                        for y in range(MAZE_ROWS - 1, -1, -1):
+                            for x in range(MAZE_COLS - 1, -1, -1):
+                                if self.maze[y][x].status == 1:
+                                    self.maze[y][x].status = 3  # End
+                                    end_found = True
+                                    break
+                            if end_found:
+                                break
+                        
+                        self.MazeGenerated = self.maze
+                        self.start_time = time.time()
+                        
+                        # Clear particles when done
+                        self.particle_system.clear()
+                        break
+                else:
+                    self.generating_maze = False
+                    break
+        
+        # Update game state
         if self.state=="game" and not self.paused:
             self.timer += dt; self.monkey_idle.update(dt); self.banana.update(dt)
 
@@ -646,7 +806,7 @@ class App:
         self.screen.blit(bg, (0, 0))
 
         # Cập nhật kích thước nút START theo tỷ lệ cửa sổ
-        base_width = 240  # Kích thước cơ bản
+        base_width = 320  # Kích thước cơ bản (tăng từ 240 lên 320)
         scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)  # Tỷ lệ so với fullscreen chuẩn
         scale_factor = max(0.5, min(1.0, scale_factor))  # Giới hạn từ 50% đến 100%
 
@@ -685,99 +845,149 @@ class App:
         # sidebar card - use optimized drawing for small windows
         sidebar = pygame.Rect(self.window_rect.w-scaled_panel_w+int(10*scale_factor), 60, scaled_panel_w-int(20*scale_factor), self.window_rect.h-70)
 
+        # Vẽ sidebar bán trong suốt (cả performance mode và normal mode)
         if self.skip_expensive_effects:
-            # Simple sidebar background for performance
-            pygame.draw.rect(self.screen, (18,24,18), sidebar, border_radius=12)
+            # Simple sidebar với alpha cho performance mode
+            sidebar_surface = pygame.Surface(sidebar.size, pygame.SRCALPHA)
+            sidebar_surface.fill((18,24,18,80))  # Bán trong suốt trong performance mode
+            self.screen.blit(sidebar_surface, sidebar.topleft)
+            pygame.draw.rect(self.screen, (110,150,110), sidebar, 2, border_radius=12)
         else:
-            # Full quality sidebar
-            draw_glass_card(self.screen, sidebar, radius=22, bg=(18,24,18,190), border=(110,150,110), border_alpha=70)
+            # Full quality sidebar - Nền rất trong suốt để thấy rõ background phía sau
+            draw_glass_card(self.screen, sidebar, radius=22, bg=(18,24,18,100), border=(110,150,110), border_alpha=90)
 
-        # chips - căn giữa text
+        # chips - căn giữa trong sidebar
+        # Hiển thị trạng thái generating nếu đang generate maze
+        if self.generating_maze and self.generation_model:
+            status_text = f"Generating... {self.generation_model.current_step}/{len(self.generation_model.generation_steps)}"
+            status_color = (255, 255, 100)  # Màu vàng
+            status_label = self.font_small.render(status_text, True, status_color)
+            status_x = sidebar.x + (sidebar.width - status_label.get_width()) // 2
+            status_y = sidebar.y + int(20*scale_factor)
+            self.screen.blit(status_label, (status_x, status_y))
+        
         t = f"{int(self.timer//60):02d}:{int(self.timer%60):02d}"
-        chip_h = max(28, int(36 * scale_factor)); x0 = sidebar.x+int(18*scale_factor); y0 = sidebar.y+int(50*scale_factor)
-        chip1 = pygame.Rect(x0, y0, int(140*scale_factor), chip_h)
+        y0 = sidebar.y+int(35*scale_factor)  # Giảm từ 50 xuống 35 để nhích lên
+        chip_spacing = int(10*scale_factor)
+        
+        # Tính kích thước time box dựa trên aspect ratio của asset - TO HƠN
+        time_box_img = self.box_assets['time']
+        time_box_aspect = time_box_img.get_width() / time_box_img.get_height()
+        target_time_h = max(70, int(50 * scale_factor))  
+        chip1_w = int(target_time_h * time_box_aspect)  # Chiều rộng giữ tỷ lệ
+        chip1_h = target_time_h
+        
+        # Tính kích thước step box dựa trên aspect ratio của asset - TO HƠN
+        step_box_img = self.box_assets['step']
+        step_box_aspect = step_box_img.get_width() / step_box_img.get_height()
+        target_step_h = target_time_h  # Cùng chiều cao với time box
+        chip2_w = int(target_step_h * step_box_aspect)  # Chiều rộng giữ tỷ lệ
+        chip2_h = target_step_h
+        
+        total_chip_w = chip1_w + chip_spacing + chip2_w
+        
+        # Căn giữa cả 2 chips trong sidebar
+        chips_start_x = sidebar.x + (sidebar.width - total_chip_w) // 2
+        chip1 = pygame.Rect(chips_start_x, y0, chip1_w, chip1_h)
 
-        if self.skip_expensive_effects:
-            # Simple chip backgrounds
-            pygame.draw.rect(self.screen, (26,34,26), chip1, border_radius=8)
-        else:
-            draw_smooth_rect(self.screen, chip1, (26,34,26,220), radius=18, border=2, border_color=(86,116,86))
+        # Vẽ time box với background image (giữ tỷ lệ gốc)
+        time_box_scaled = pygame.transform.smoothscale(self.box_assets['time'], (chip1_w, chip1_h))
+        self.screen.blit(time_box_scaled, chip1.topleft)
 
-        time_label = self.font_small.render("⏱  "+t, True, (235,235,235))
+        # Font lớn hơn và in đậm cho time (jungle theme)
+        time_label = self.font_chip.render(t, True, (255, 250, 220))  # Màu vàng kem
         time_x = chip1.x + (chip1.width - time_label.get_width()) // 2  # Căn giữa
         time_y = chip1.y + (chip1.height - time_label.get_height()) // 2  # Căn giữa
         self.screen.blit(time_label, (time_x, time_y))
 
-        chip2 = pygame.Rect(chip1.right+int(10*scale_factor), y0, int(120*scale_factor), chip_h)
+        chip2 = pygame.Rect(chip1.right + chip_spacing, y0, chip2_w, chip2_h)
 
-        if self.skip_expensive_effects:
-            pygame.draw.rect(self.screen, (26,34,26), chip2, border_radius=8)
-        else:
-            draw_smooth_rect(self.screen, chip2, (26,34,26,220), radius=18, border=2, border_color=(86,116,86))
+        # Vẽ step box với background image (giữ tỷ lệ gốc)
+        step_box_scaled = pygame.transform.smoothscale(self.box_assets['step'], (chip2_w, chip2_h))
+        self.screen.blit(step_box_scaled, chip2.topleft)
 
-        steps_label = self.font_small.render("🚶  "+str(self.steps), True, (235,235,235))
+        # Font lớn hơn và in đậm cho steps (jungle theme)
+        steps_label = self.font_chip.render(str(self.steps), True, (255, 250, 220))  # Màu vàng kem
         steps_x = chip2.x + (chip2.width - steps_label.get_width()) // 2  # Căn giữa
         steps_y = chip2.y + (chip2.height - steps_label.get_height()) // 2  # Căn giữa
         self.screen.blit(steps_label, (steps_x, steps_y))
 
-        # buttons - layout mới: mỗi nút chính một hàng riêng
-        spx = sidebar.x+int(20*scale_factor); cur_y = y0 + chip_h + int(24*scale_factor)
-        full_btn_w = scaled_panel_w - int(40*scale_factor)  # Chiều rộng đầy đủ cho nút
-        half_btn_w = (full_btn_w - int(8*scale_factor)) // 2  # Chiều rộng cho 2 nút (Play/Pause)
-        spacing = max(8, int(10*scale_factor))
-
-        # Dòng 1: Restart button (full width)
-        self.btn_restart.rect.topleft = (spx, cur_y)
-        self.btn_restart.rect.width = full_btn_w
-        self.btn_restart.draw(self.screen)
-        cur_y += self.btn_restart.rect.height + spacing
-
-        # Dòng 2: Auto button (full width)
-        self.btn_auto.rect.topleft = (spx, cur_y)
-        self.btn_auto.rect.width = full_btn_w
-        self.btn_auto.draw(self.screen)
-        cur_y += self.btn_auto.rect.height + spacing
-
-        # Dòng 3: Play và Pause (2 nút cạnh nhau)
-        self.btn_play.rect.topleft = (spx, cur_y)
-        self.btn_play.rect.width = half_btn_w
-        self.btn_play.draw(self.screen)
+        # buttons - layout mới: mỗi nút chính một hàng riêng, căn giữa, giữ aspect ratio
+        cur_y = y0 + chip1_h + int(16*scale_factor)  # Giảm từ 24 xuống 16
+        side_margin = int(10*scale_factor)  # Margin rất nhỏ để nút lớn nhất
+        side_margin = max(8, side_margin)
+        full_btn_w = scaled_panel_w - (side_margin * 2)  # Chiều rộng tối đa
+        spacing = max(6, int(8*scale_factor))  # Giảm từ 10 xuống 8
         
-        self.btn_pause.rect.topleft = (spx + half_btn_w + 8, cur_y)
-        self.btn_pause.rect.width = half_btn_w
-        self.btn_pause.draw(self.screen)
-        cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing + 5
+        # Chiều cao cố định cho tất cả các nút để đồng nhất
+        target_btn_h = int(85 * scale_factor)  
+        target_btn_h = max(70, target_btn_h)
 
-        # Dòng 4: Dropdown solving algorithm (full width)
-        self.dropdown.rect.topleft = (spx, cur_y)
+        # Tính kích thước riêng cho từng nút trước
+        restart_size_temp = calculate_button_size(self.btn_assets['restart'], target_height=target_btn_h)
+        auto_size_temp = calculate_button_size(self.btn_assets['auto'], target_height=target_btn_h)
+        
+        # Lấy chiều rộng lớn nhất để tất cả các nút restart và auto có cùng kích thước
+        max_width = max(restart_size_temp[0], auto_size_temp[0])
+        restart_size = (max_width, target_btn_h)
+        auto_size = (max_width, target_btn_h)
+        
+        # Generate button không dùng background image, tính kích thước dựa trên text
+        generate_w = full_btn_w
+        generate_h = int(50 * scale_factor)  # Giảm từ 55 xuống 50
+        generate_h = max(40, generate_h)  # Giảm từ 45 xuống 40
+        generate_size = (generate_w, generate_h)
+        history_size = calculate_button_size(self.btn_assets['history'], target_height=target_btn_h)
+        back_size = calculate_button_size(self.btn_assets['back'], target_height=target_btn_h)
+
+        # Dòng 1: Restart button (căn giữa)
+        restart_x = sidebar.x + (scaled_panel_w - restart_size[0]) // 2
+        self.btn_restart.rect = pygame.Rect(restart_x, cur_y, restart_size[0], restart_size[1])
+        self.btn_restart.draw(self.screen)
+        cur_y += restart_size[1] + spacing
+
+        # Dòng 2: Auto button (căn giữa)
+        auto_x = sidebar.x + (scaled_panel_w - auto_size[0]) // 2
+        self.btn_auto.rect = pygame.Rect(auto_x, cur_y, auto_size[0], auto_size[1])
+        self.btn_auto.draw(self.screen)
+        cur_y += auto_size[1] + spacing
+
+        # Dòng 3: Dropdown solving algorithm (căn giữa)
+        dropdown_x = sidebar.x + (scaled_panel_w - full_btn_w) // 2
+        self.dropdown.rect.topleft = (dropdown_x, cur_y)
         self.dropdown.rect.width = full_btn_w
         cur_y += self.dropdown.rect.height + spacing
 
-        # Dòng 5: Dropdown generation algorithm (full width)
-        self.maze_gen_dropdown.rect.topleft = (spx, cur_y)
+        # Dòng 4: Dropdown generation algorithm (căn giữa)
+        self.maze_gen_dropdown.rect.topleft = (dropdown_x, cur_y)
         self.maze_gen_dropdown.rect.width = full_btn_w
         cur_y += self.maze_gen_dropdown.rect.height + spacing
 
-        # Dòng 6: Generate button (full width)
-        self.btn_generate.rect.topleft = (spx, cur_y)
-        self.btn_generate.rect.width = full_btn_w
+        # Dòng 5: Generate button (căn giữa)
+        generate_x = sidebar.x + (scaled_panel_w - generate_size[0]) // 2
+        self.btn_generate.rect = pygame.Rect(generate_x, cur_y, generate_size[0], generate_size[1])
         self.btn_generate.draw(self.screen)
-        cur_y += self.btn_generate.rect.height + spacing + 5
+        cur_y += generate_size[1] + spacing
 
-        # Dòng 7: History button (full width)
-        self.btn_history.rect.topleft = (spx, cur_y)
-        self.btn_history.rect.width = full_btn_w
+        # Dòng 6: History button (căn giữa)
+        history_x = sidebar.x + (scaled_panel_w - history_size[0]) // 2
+        self.btn_history.rect = pygame.Rect(history_x, cur_y, history_size[0], history_size[1])
         self.btn_history.draw(self.screen)
-        cur_y += self.btn_history.rect.height + spacing
+        cur_y += history_size[1] + spacing
 
-        # Dòng 8: Back button (full width)
-        self.btn_back.rect.topleft = (spx, cur_y)
-        self.btn_back.rect.width = full_btn_w
+        # Dòng 7: Back button (căn giữa)
+        back_x = sidebar.x + (scaled_panel_w - back_size[0]) // 2
+        self.btn_back.rect = pygame.Rect(back_x, cur_y, back_size[0], back_size[1])
         self.btn_back.draw(self.screen)
 
         # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác
-        self.dropdown.draw(self.screen)
-        self.maze_gen_dropdown.draw(self.screen)
+        # Vẽ dropdown đóng trước, dropdown đang mở sau để hiển thị trên cùng
+        if self.dropdown.open:
+            self.maze_gen_dropdown.draw(self.screen)
+            self.dropdown.draw(self.screen)
+        else:
+            self.dropdown.draw(self.screen)
+            self.maze_gen_dropdown.draw(self.screen)
 
         # maze frame card - simplified for performance mode
         if self.skip_expensive_effects:
@@ -801,29 +1011,81 @@ class App:
                     # Use pre-scaled cached tiles instead of scaling every frame
                     self.screen.blit(self.scaled_floor_tiles[idx], (x,y))
 
-            # draw walls using cached scaled tile
+            # draw player (monkey) - VẼ TRƯỚC walls để đứng sau tường
+            px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
+            py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
+            self.screen.blit(self.monkey_idle.current(), (px, py))
+
+            # draw banana goal - VẼ TRƯỚC walls để đứng sau tường
+            gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
+            gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
+
+            if self.skip_expensive_effects:
+                # Static banana without animation
+                self.screen.blit(self.banana.base_image, (gx, gy))
+            else:
+                # Animated floating banana
+                self.banana.draw(self.screen, (gx, gy))
+
+            # draw walls using cached scaled tile - VẼ SAU player và banana để che chúng
             for r in range(MAZE_ROWS):
                 for c in range(MAZE_COLS):
                     if self.maze[r][c].status == 0:
                         x = self.maze_rect.x + c*cell; y = self.maze_rect.y + r*cell
                         # Use pre-scaled cached wall tile
                         self.screen.blit(self.scaled_wall_tile, (x, y))
+            
+            # Hiệu ứng cho đường đi đang được tạo
+            if self.generating_maze and self.generation_model:
+                current_step = self.generation_model.current_step - 1
+                if current_step >= 0:
+                    # Tạo hiệu ứng sáng cho các ô vừa phá tường
+                    highlight_range = 8  # Số ô được highlight
+                    for i in range(max(0, current_step - highlight_range), current_step + 1):
+                        if i < len(self.generation_model.generation_steps):
+                            step_x, step_y, action = self.generation_model.generation_steps[i]
+                            
+                            if action in ['break_wall', 'path']:
+                                # Vẽ hiệu ứng cho path và break_wall
+                                x = self.maze_rect.x + step_x * cell
+                                y = self.maze_rect.y + step_y * cell
+                                
+                                # Tính độ sáng giảm dần theo thời gian
+                                age = current_step - i
+                                intensity = 1 - (age / highlight_range)
+                                
+                                # Màu vàng sáng cho ô vừa phá
+                                if age == 0:
+                                    # Ô hiện tại - sáng nhất với viền sáng
+                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                                    overlay.fill((255, 255, 150, 220))
+                                    self.screen.blit(overlay, (x, y))
+                                    # Viền sáng
+                                    pygame.draw.rect(self.screen, (255, 255, 200), (x, y, cell, cell), 2)
+                                else:
+                                    # Ô cũ hơn - gradient màu từ vàng sang xanh nhạt
+                                    alpha = int(180 * intensity)
+                                    r = int(255 * intensity + 100 * (1 - intensity))
+                                    g = int(255 * intensity + 200 * (1 - intensity))
+                                    b = int(150 * intensity + 150 * (1 - intensity))
+                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                                    overlay.fill((r, g, b, alpha))
+                                    self.screen.blit(overlay, (x, y))
+                            
+                            elif action == 'build_wall':
+                                # Hiệu ứng xây tường (cho Recursive Division)
+                                x = self.maze_rect.x + step_x * cell
+                                y = self.maze_rect.y + step_y * cell
+                                age = current_step - i
+                                if age < 5:
+                                    alpha = int(150 * (1 - age / 5))
+                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                                    overlay.fill((200, 100, 100, alpha))
+                                    self.screen.blit(overlay, (x, y))
 
-        # draw player
-        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
-        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
-        self.screen.blit(self.monkey_idle.current(), (px, py))
-
-        # draw banana goal - skip floating animation in performance mode
-        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
-        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
-
-        if self.skip_expensive_effects:
-            # Static banana without animation
-            self.screen.blit(self.banana.base_image, (gx, gy))
-        else:
-            # Animated floating banana
-            self.banana.draw(self.screen, (gx, gy))
+        # Draw particles (vẽ SAU maze và player để particles nằm trên cùng)
+        if self.generating_maze:
+            self.particle_system.draw(self.screen)
 
         # window buttons - vẽ cuối cùng để đảm bảo không bị đè
         for b in (self.btn_min, self.btn_max, self.btn_close):
