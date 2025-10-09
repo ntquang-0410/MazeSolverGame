@@ -1,6 +1,10 @@
 import os, sys, math, random, pygame, time
-from Model.__init__ import GenerationModel, SolvingModel
-#from Controller.__init__ import MazeController
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from Model import GenerationModel, SolvingModel
+#from Controller import MazeController
 
 
 GAME_TITLE = "Monkey's Treasure"
