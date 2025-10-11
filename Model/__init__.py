@@ -27,6 +27,11 @@ class GenerationModel:
         self.end_pos: Optional[Tuple[int, int]] = (maze_width - 2, maze_height - 2) # Mặc định vị trí kết thúc
         self.generation_complete = False # Cờ để kiểm tra quá trình sinh mê cung đã hoàn thành
 
+        # Animation attributes
+        self.animated_generation = False  # Whether to record steps for animation
+        self.generation_steps = []  # List of (x, y, action) tuples for animation
+        self.current_step = 0  # Current step in animation
+
     def __get_neighbors(self, x: int, y: int ) -> List[Tuple[int, int]]:
         neighbors = []
         directions = [(0, 2), (0, -2), (2, 0), (-2, 0)]
@@ -44,6 +49,7 @@ class GenerationModel:
         visited = set()
         visited.add((1, 1))
         self.Maze[1][1].status = 1  # Đánh dấu là path
+        self._record_step(1, 1, 'path')  # Record animation step
 
         while stack:
             current_x, current_y = stack[-1]  # Peek top of stack
@@ -68,6 +74,10 @@ class GenerationModel:
                 self.Maze[wall_y][wall_x].status = 1  # Phá tường
                 self.Maze[next_y][next_x].status = 1  # Đánh dấu ô đích là path
 
+                # Record animation steps
+                self._record_step(wall_x, wall_y, 'break_wall')
+                self._record_step(next_x, next_y, 'path')
+
                 # Thêm vào stack
                 stack.append((next_x, next_y))
             else:
@@ -83,6 +93,7 @@ class GenerationModel:
         for y in range(1, self.maze_height, 2):
             for x in range(1, self.maze_width, 2):
                 self.Maze[y][x].status = 1  # Path
+                self._record_step(x, y, 'path')  # Record animation step
 
                 # Thêm tường ngang
                 if x + 2 < self.maze_width:
@@ -117,12 +128,14 @@ class GenerationModel:
                 wall_x = (x1 + x2) // 2
                 wall_y = (y1 + y2) // 2
                 self.Maze[wall_y][wall_x].status = 1  # Path
+                self._record_step(wall_x, wall_y, 'break_wall')  # Record animation step
 
     def Binary_Tree(self):
         """Thuật toán Binary Tree để sinh mê cung"""
         for y in range(1, self.maze_height, 2):
             for x in range(1, self.maze_width, 2):
                 self.Maze[y][x].status = 1  # Path
+                self._record_step(x, y, 'path')  # Record animation step
 
                 # Chọn ngẫu nhiên hướng: lên hoặc trái
                 directions = []
@@ -135,8 +148,10 @@ class GenerationModel:
                     direction = random.choice(directions)
                     if direction == "up":
                         self.Maze[y - 1][x].status = 1  # Path
+                        self._record_step(x, y - 1, 'break_wall')  # Record animation step
                     else:  # left
                         self.Maze[y][x - 1].status = 1  # Path
+                        self._record_step(x - 1, y, 'break_wall')  # Record animation step
 
     def Wilson(self):
         """Thuật toán Wilson để sinh mê cung"""
@@ -147,6 +162,7 @@ class GenerationModel:
         # Chọn ô đầu tiên làm điểm bắt đầu
         start = random.choice(cells)
         self.Maze[start[1]][start[0]].status = 1  # Path
+        self._record_step(start[0], start[1], 'path')  # Record animation step
         remaining = [cell for cell in cells if cell != start]
 
         while remaining:
@@ -177,11 +193,13 @@ class GenerationModel:
                 x2, y2 = path[i + 1]
 
                 self.Maze[y1][x1].status = 1  # Path
+                self._record_step(x1, y1, 'path')  # Record animation step
 
                 # Phá tường giữa hai ô
                 wall_x = (x1 + x2) // 2
                 wall_y = (y1 + y2) // 2
                 self.Maze[wall_y][wall_x].status = 1  # Path
+                self._record_step(wall_x, wall_y, 'break_wall')  # Record animation step
 
             # Cập nhật danh sách ô còn lại
             remaining = [cell for cell in remaining
@@ -193,6 +211,7 @@ class GenerationModel:
         for y in range(1, self.maze_height - 1):
             for x in range(1, self.maze_width - 1):
                 self.Maze[y][x].status = 1  # Đường đi
+                self._record_step(x, y, 'path')  # Record animation step
 
         def __divide(x_left: int, y_left: int, x_right: int, y_right: int):
             """Đệ quy chia khu vực thành các phần nhỏ hơn"""
@@ -217,10 +236,12 @@ class GenerationModel:
                 # Tạo tường ngang
                 for wall in range(x_left, x_right + 1):
                     self.Maze[wall_y][wall].status = 0
+                    self._record_step(wall, wall_y, 'build_wall')  # Record animation step
 
                 # Tạo một lỗ ngẫu nhiên trong tường
                 path_x = random_odd(x_left, x_right - 1)
                 self.Maze[wall_y][path_x].status = 1  # Path
+                self._record_step(path_x, wall_y, 'path')  # Record animation step
 
                 # Đệ quy chia hai phần
                 __divide(x_left, y_left, x_right, wall_y - 1)
@@ -233,10 +254,12 @@ class GenerationModel:
                 # Tạo tường dọc
                 for wy in range(y_left, y_right + 1):
                     self.Maze[wy][wall_x].status = 0  # Wall
+                    self._record_step(wall_x, wy, 'build_wall')  # Record animation step
 
                 # Tạo một lỗ ngẫu nhiên trong tường
                 hole_y = random_odd(y_left, y_right - 1)
                 self.Maze[hole_y][wall_x].status = 1  # Path
+                self._record_step(wall_x, hole_y, 'path')  # Record animation step
 
                 # Đệ quy chia hai phần
                 __divide(x_left, y_left, wall_x - 1, y_right)
@@ -288,6 +311,14 @@ class GenerationModel:
 
     def generate_maze(self):
         """Sinh mê cung theo thuật toán đã chọn"""
+        if self.animated_generation:
+            # Initialize maze to all walls for animation
+            for y in range(self.maze_height):
+                for x in range(self.maze_width):
+                    self.Maze[y][x].status = 0  # All walls initially
+            self.generation_steps = []
+            self.current_step = 0
+
         if self.Algorithm == "DFS":
             self.DFS()
             self.init_maze_reset()
@@ -307,6 +338,29 @@ class GenerationModel:
         self.__set_start_end()
         self.generation_complete = True
         return self.Maze
+
+    def apply_next_step(self):
+        """Apply the next animation step and return True if more steps remain"""
+        if not self.animated_generation or self.current_step >= len(self.generation_steps):
+            return False
+
+        x, y, action = self.generation_steps[self.current_step]
+
+        # Apply the step to the maze
+        if action == 'path':
+            self.Maze[y][x].status = 1  # Path
+        elif action == 'break_wall':
+            self.Maze[y][x].status = 1  # Break wall to create path
+        elif action == 'build_wall':
+            self.Maze[y][x].status = 0  # Build wall
+
+        self.current_step += 1
+        return self.current_step < len(self.generation_steps)
+
+    def _record_step(self, x, y, action):
+        """Record a step for animation if enabled"""
+        if self.animated_generation:
+            self.generation_steps.append((x, y, action))
 
 class SolvingModel:
     def __init__(self, maze_grid: List[List[Node_Cell]], maze_width: int, maze_height: int):
@@ -654,3 +708,6 @@ class SolvingModel:
                     self.maze_grid[pos[1]][pos[0]].status = 4  # Path Found
 
         return self.solution_found
+
+# Export all public classes
+__all__ = ['Node_Cell', 'GenerationModel', 'SolvingModel']

@@ -3,7 +3,7 @@ import os, sys, math, random, pygame, time
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Model import GenerationModel, SolvingModel
+from Model.__init__ import GenerationModel, SolvingModel
 from View.components import Button, Dropdown, ModalHistory, ModalVictory
 from View.sprites import FloatingBanana, MonkeyIdle
 from View.utils import load_image, draw_shadow, draw_glass_card, draw_smooth_rect, try_load_font, calculate_button_size
@@ -425,6 +425,7 @@ class FloatingBanana(pygame.sprite.Sprite):
         self.image = image
         self.rect = self.image.get_rect()
         self.t = 0.0
+        self.offset = (0, 0)  # Initialize offset to prevent AttributeError
 
     def update(self, dt):
         self.t += dt
@@ -684,7 +685,7 @@ class App:
 
         # Dòng 5: Dropdown generation algorithm (căn giữa trong sidebar card)
         self.maze_gen_dropdown = Dropdown((dropdown_x, cur_y, target_btn_w, 42), self.font_small,
-                                         ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Div."],
+                                         ["DFS", "Kruskal", "Binary_Tree", "Wilson", "Recursive_Division"],
                                          default_text="Generation Algorithm",
                                          on_select=self.set_generation_algo)
         cur_y += 42 + row_spacing
@@ -1106,7 +1107,7 @@ class App:
                     self.modal_victory.handle_event(event)
                 else:
                     for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)
-                    self.solving_dropdown.handle_event(event)
+                    self.dropdown.handle_event(event)
                     self.maze_gen_dropdown.handle_event(event)
                     if event.type == pygame.KEYDOWN and not self.paused:
                         if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)
