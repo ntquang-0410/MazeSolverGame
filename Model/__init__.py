@@ -1,4 +1,4 @@
-import random
+﻿import random
 import heapq
 import time
 from collections import deque
