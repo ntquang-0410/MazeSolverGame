@@ -12,7 +12,7 @@ from View.particle import ParticleSystem
 
 
 GAME_TITLE = "Monkey's Treasure"
-FULLSCREEN = True  # Game khởi động ở chế độ fullscreen
+FULLSCREEN = False  # Game khởi động ở chế độ fullscreen
 RIGHT_PANEL_W = 420  # Tăng từ 360 lên 420 để có nhiều không gian hơn
 FPS = 60
 # Cài đặt tối ưu hóa hiệu suất
@@ -552,11 +552,12 @@ class App:
         self.generating_maze = False
         self.generation_model = None
         self.generation_timer = 0.0
-        self.generation_speed = 0.01  # Seconds per step (tăng từ 0.003 lên 0.015 để chậm hơn, dễ quan sát)
+        self.generation_speed = 0.03  # Seconds per step - tăng lên để chậm hơn, dễ quan sát hiệu ứng phá tường
 
         # Particle effects for wall breaking
         self.particle_system = ParticleSystem()
         self.last_broken_cells = []  # Track recently broken cells for particle emission
+        self.wall_break_effects = []  # Track wall break animation effects
 
         # Lưu kích thước windowed và trạng thái fullscreen
         self.windowed_size = (1024, 768)  # Kích thước khi không full màn hình
@@ -1027,12 +1028,22 @@ class App:
         self.generation_model = GenerationModel(MAZE_COLS, MAZE_ROWS, self.selected_generation_algo)
         self.generation_model.animated_generation = True
 
-        # Generate maze để tạo animation steps
-        # Model sẽ tự động khởi tạo maze về trạng thái ban đầu khi animated_generation = True
+        # Khởi tạo maze về trạng thái toàn tường TRƯỚC khi generate
+        for y in range(MAZE_ROWS):
+            for x in range(MAZE_COLS):
+                self.generation_model.Maze[y][x].status = 0  # All walls initially
+
+        # Generate maze để tạo animation steps (không áp dụng ngay vào maze)
         self.generation_model.generate_maze()
 
-        # Copy maze trạng thái ban đầu từ model
-        self.maze = self.generation_model.Maze
+        # Reset maze về trạng thái ban đầu (toàn tường) để animation có thể áp dụng từng bước
+        for y in range(MAZE_ROWS):
+            for x in range(MAZE_COLS):
+                self.generation_model.Maze[y][x].status = 0  # All walls initially
+        self.generation_model.current_step = 0  # Reset về bước đầu
+
+        # Copy maze trạng thái ban đầu (toàn tường) từ model
+        self.maze = [[self.generation_model.Maze[y][x] for x in range(MAZE_COLS)] for y in range(MAZE_ROWS)]
 
         # Bắt đầu animation
         self.generating_maze = True
@@ -1136,6 +1147,7 @@ class App:
     # ---- Update / Draw
     def update(self, dt):
         # Update particle system
+        global has_more
         self.particle_system.update(dt)
 
         # Update maze generation animation

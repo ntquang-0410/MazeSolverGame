@@ -31,6 +31,8 @@ class GenerationModel:
         self.animated_generation = False  # Whether to record steps for animation
         self.generation_steps = []  # List of (x, y, action) tuples for animation
         self.current_step = 0  # Current step in animation
+        self.generation_speed = 0.05  # Speed of animation (seconds between steps)
+        self.step_delay_timer = 0.0  # Timer for step delays
 
     def __get_neighbors(self, x: int, y: int ) -> List[Tuple[int, int]]:
         neighbors = []
@@ -312,30 +314,30 @@ class GenerationModel:
     def generate_maze(self):
         """Sinh mê cung theo thuật toán đã chọn"""
         if self.animated_generation:
-            # Initialize maze to all walls for animation
+            # Initialize maze to all walls for animation - QUAN TRỌNG: phải làm trước khi chạy thuật toán
             for y in range(self.maze_height):
                 for x in range(self.maze_width):
                     self.Maze[y][x].status = 0  # All walls initially
             self.generation_steps = []
             self.current_step = 0
 
+        # Chạy thuật toán để tạo animation steps
         if self.Algorithm == "DFS":
             self.DFS()
-            self.init_maze_reset()
         elif self.Algorithm == "Kruskal":
             self.Kruskal()
-            self.init_maze_reset()
         elif self.Algorithm == "Binary_Tree":
             self.Binary_Tree()
-            self.init_maze_reset()
         elif self.Algorithm == "Wilson":
             self.Wilson()
-            self.init_maze_reset()
         elif self.Algorithm == "Recursive_Division":
             self.Recursive_Division()
-            self.init_maze_reset()
 
-        self.__set_start_end()
+        # Chỉ lưu backup nếu KHÔNG phải animation mode
+        if not self.animated_generation:
+            self.init_maze_reset()
+            self.__set_start_end()
+
         self.generation_complete = True
         return self.Maze
 
