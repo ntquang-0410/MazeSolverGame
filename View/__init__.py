@@ -678,7 +678,7 @@ class App:
 
         # Dòng 4: Dropdown solving algorithm (căn giữa trong sidebar card)
         dropdown_x = sidebar_card_x + (sidebar_card_w - target_btn_w) // 2
-        self.dropdown = Dropdown((dropdown_x, cur_y, target_btn_w, 42), self.font_small,
+        self.solving_dropdown = Dropdown((dropdown_x, cur_y, target_btn_w, 42), self.font_small,
                                 ["BFS","DFS","UCS","A*","Bidirectional"],
                                 default_text="Solving Algorithm",
                                 on_select=self.set_algo)
@@ -842,7 +842,7 @@ class App:
         dropdown_h = int(42 * scale_factor)
         dropdown_h = max(35, dropdown_h)
         dropdown_x = sidebar_card_x + (sidebar_card_w - target_btn_w) // 2
-        self.dropdown.rect = pygame.Rect(dropdown_x, cur_y, target_btn_w, dropdown_h)
+        self.solving_dropdown.rect = pygame.Rect(dropdown_x, cur_y, target_btn_w, dropdown_h)
         cur_y += dropdown_h + row_spacing
 
         # Dòng 4: Dropdown generation algorithm (căn giữa trong sidebar card)
@@ -1118,7 +1118,7 @@ class App:
                     self.modal_victory.handle_event(event)
                 else:
                     for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)
-                    self.dropdown.handle_event(event)
+                    self.solving_dropdown.handle_event(event)
                     self.maze_gen_dropdown.handle_event(event)
                     if event.type == pygame.KEYDOWN and not self.paused:
                         if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)
@@ -1385,9 +1385,9 @@ class App:
 
         # Dòng 3: Dropdown solving algorithm (căn giữa)
         dropdown_x = sidebar.x + (scaled_panel_w - full_btn_w) // 2
-        self.dropdown.rect.topleft = (dropdown_x, cur_y)
-        self.dropdown.rect.width = full_btn_w
-        cur_y += self.dropdown.rect.height + spacing
+        self.solving_dropdown.rect.topleft = (dropdown_x, cur_y)
+        self.solving_dropdown.rect.width = full_btn_w
+        cur_y += self.solving_dropdown.rect.height + spacing
 
         # Dòng 4: Dropdown generation algorithm (căn giữa)
         self.maze_gen_dropdown.rect.topleft = (dropdown_x, cur_y)
@@ -1411,13 +1411,13 @@ class App:
         self.btn_back.rect = pygame.Rect(back_x, cur_y, back_size[0], back_size[1])
         self.btn_back.draw(self.screen)
 
-        # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác
-        # Vẽ dropdown đóng trước, dropdown đang mở sau để hiển thị trên cùng
-        if self.dropdown.open:
+        # Vẽ solving_dropdown cuối cùng để chúng hiển thị trên các element khác
+        # Vẽ solving_dropdown đóng trước, solving_dropdown đang mở sau để hiển thị trên cùng
+        if self.solving_dropdown.open:
             self.maze_gen_dropdown.draw(self.screen)
-            self.dropdown.draw(self.screen)
+            self.solving_dropdown.draw(self.screen)
         else:
-            self.dropdown.draw(self.screen)
+            self.solving_dropdown.draw(self.screen)
             self.maze_gen_dropdown.draw(self.screen)
 
         # mê cung frame card - simplified for performance mode
