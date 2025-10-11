@@ -1,0 +1,689 @@
+Index: View/__init__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import os, sys, math, random, pygame, time\nfrom Model.__init__ import GenerationModel, SolvingModel\n#from Controller.__init__ import MazeController\n\n\nGAME_TITLE = \"Monkey's Treasure\"\nFULLSCREEN = False\nRIGHT_PANEL_W = 360\nFPS = 60\n# Performance optimization settings\nPERFORMANCE_MODE = False  # Automatically enabled when window is small\nMIN_FPS_THRESHOLD = 30    # Switch to performance mode if FPS drops below this\nPERFORMANCE_FPS = 30      # Reduced FPS in performance mode\nMIN_CELL_SIZE_FOR_DETAILS = 12  # Don't draw detailed elements if cells are smaller\nGENERATOR = \"None\" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division\nMODE = None  # Easy, Medium, Hard\nMAZE_COLS, MAZE_ROWS = 25, 19\nCELL_GAP = 0  # khít nhau\n\nASSETS = os.path.join(os.path.dirname(__file__), \"assets\")\nIMG = lambda name: os.path.join(ASSETS, name)\n\n# ---------- Utility & Theme ----------\ndef load_image(path, alpha=True):\n    try:\n        img = pygame.image.load(path)\n        return img.convert_alpha() if alpha else img.convert()\n    except Exception as e:\n        surf = pygame.Surface((64,64), pygame.SRCALPHA if alpha else 0)\n        surf.fill((200,50,50,160) if alpha else (200,50,50))\n        return surf\n\nPALETTES = {\n    'neutral': ((20,28,20), (28,36,28), (60,80,60)),\n    'green'  : ((32,64,44), (48,104,74), (84,140,110)),\n    'yellow' : ((88,72,24), (130,110,36), (170,140,50)),\n    'orange' : ((120,64,30), (170,96,48), (210,130,70)),\n    'blue'   : ((34,54,86),  (48,86,138), (72,118,170)),\n    'purple' : ((52,34,86),  (88,58,140), (120,90,168)),\n    'red'    : ((92,38,38),  (138,54,54), (170,84,84)),\n}\n\ndef draw_shadow(surface, rect, radius=16, offset=(0,6), alpha=110):\n    s = pygame.Surface((rect.w+20, rect.h+20), pygame.SRCALPHA)\n    pygame.draw.rect(s, (0,0,0,alpha), pygame.Rect(10,10,rect.w,rect.h), border_radius=radius)\n    surface.blit(s, (rect.x-10+offset[0], rect.y-10+offset[1]))\n\ndef draw_glass_card(surface, rect, radius=18, bg=(16,20,16,180), border=(90,120,90), border_alpha=60):\n    draw_shadow(surface, rect, radius, (0,10), 120)\n    card = pygame.Surface(rect.size, pygame.SRCALPHA)\n    pygame.draw.rect(card, bg, card.get_rect(), border_radius=radius)\n    pygame.draw.rect(card, (*border, border_alpha), card.get_rect(), 2, border_radius=radius)\n    surface.blit(card, rect.topleft)\n\ndef draw_smooth_rect(surface, rect, color, radius=16, border=0, border_color=(0,0,0)):\n    # Supersampling to smooth edges\n    scale = 2\n    temp = pygame.Surface((rect.w*scale, rect.h*scale), pygame.SRCALPHA)\n    pygame.draw.rect(temp, color, temp.get_rect(), border_radius=radius*scale)\n    if border>0:\n        pygame.draw.rect(temp, border_color, temp.get_rect(), border*scale, border_radius=radius*scale)\n    temp = pygame.transform.smoothscale(temp, rect.size)\n    surface.blit(temp, rect.topleft)\n\ndef try_load_font(size):\n    prefer = os.path.join(ASSETS, \"fonts\", \"PressStart2P.ttf\")\n    try:\n        if os.path.exists(prefer):\n            return pygame.font.Font(prefer, size)\n    except:\n        pass\n    return pygame.font.SysFont(None, size)\n\ndef calculate_button_size(image, target_width=None, target_height=None):\n    \"\"\"Tính kích thước button giữ nguyên aspect ratio của hình ảnh gốc\"\"\"\n    if image is None:\n        return (100, 40)  # Default size\n\n    orig_w, orig_h = image.get_size()\n    aspect_ratio = orig_w / orig_h\n\n    if target_width and not target_height:\n        # Có width, tính height theo tỷ lệ\n        return (target_width, int(target_width / aspect_ratio))\n    elif target_height and not target_width:\n        # Có height, tính width theo tỷ lệ\n        return (int(target_height * aspect_ratio), target_height)\n    elif target_width and target_height:\n        # Có cả 2, chọn size nhỏ hơn để fit\n        w_from_width = target_width\n        h_from_width = int(target_width / aspect_ratio)\n\n        w_from_height = int(target_height * aspect_ratio)\n        h_from_height = target_height\n\n        if h_from_width <= target_height:\n            return (w_from_width, h_from_width)\n        else:\n            return (w_from_height, h_from_height)\n    else:\n        # Không có gì, dùng kích thước gốc\n        return (orig_w, orig_h)\n\n# ---------- UI Controls ----------\nclass Button:\n    def __init__(self, rect, text, font, on_click=None, tooltip=None, theme='neutral', bg_image=None, keep_aspect=True):\n        self.rect = pygame.Rect(rect)\n        self.text = text\n        self.font = font\n        self.on_click = on_click\n        self.tooltip = tooltip\n        self.enabled = True\n        self.hovered = False\n        self.theme = theme\n        self.bg_image = bg_image\n        self.scaled_bg = None\n        self.keep_aspect = keep_aspect\n\n        # Scale background image if provided\n        if self.bg_image:\n            if keep_aspect:\n                # Giữ nguyên tỷ lệ aspect ratio của hình ảnh\n                orig_w, orig_h = self.bg_image.get_size()\n                aspect_ratio = orig_w / orig_h\n\n                # Tính kích thước mới giữ nguyên tỷ lệ\n                target_w = self.rect.width\n                target_h = self.rect.height\n\n                new_h = int(target_w / aspect_ratio)\n                if new_h <= target_h:\n                    # Dùng width làm chuẩn\n                    self.rect.height = new_h\n                else:\n                    # Dùng height làm chuẩn\n                    new_w = int(target_h * aspect_ratio)\n                    self.rect.width = new_w\n\n            self.scaled_bg = pygame.transform.smoothscale(self.bg_image, self.rect.size)\n\n    def draw(self, surface):\n        if self.bg_image and self.scaled_bg:\n            # Vẽ hình ảnh nền\n            if self.hovered and self.enabled:\n                # Hiệu ứng hover - làm sáng hình ảnh\n                hover_surface = self.scaled_bg.copy()\n                hover_overlay = pygame.Surface(self.rect.size, pygame.SRCALPHA)\n                hover_overlay.fill((255, 255, 255, 30))  # Overlay trắng nhẹ\n                hover_surface.blit(hover_overlay, (0, 0))\n                surface.blit(hover_surface, self.rect.topleft)\n            else:\n                surface.blit(self.scaled_bg, self.rect.topleft)\n\n            # Vẽ text lên hình ảnh nền\n            color = (255,255,255) if self.enabled else (170,170,170)\n            label = self.font.render(self.text, True, color)\n\n            # Thêm shadow cho text để dễ đọc hơn\n            shadow = self.font.render(self.text, True, (0,0,0))\n            shadow_pos = label.get_rect(center=(self.rect.centerx+1, self.rect.centery+1))\n            text_pos = label.get_rect(center=self.rect.center)\n\n            surface.blit(shadow, shadow_pos)\n            surface.blit(label, text_pos)\n        else:\n            # Fallback về style cũ nếu không có hình ảnh nền\n            color = (235,235,235) if self.enabled else (170,170,170)\n            base, hover, border_col = PALETTES.get(self.theme, PALETTES['neutral'])\n            bg = hover if self.hovered and self.enabled else base\n            draw_shadow(surface, self.rect, radius=14, offset=(0,6), alpha=100)\n            draw_smooth_rect(surface, self.rect, bg, radius=14, border=2, border_color=border_col)\n            label = self.font.render(self.text, True, color)\n            surface.blit(label, label.get_rect(center=self.rect.center))\n\n    def handle_event(self, event):\n        if not self.enabled: return\n        if event.type == pygame.MOUSEMOTION:\n            self.hovered = self.rect.collidepoint(event.pos)\n        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:\n            if self.rect.collidepoint(event.pos) and self.on_click:\n                self.on_click()\n\nclass Dropdown:\n    def __init__(self, rect, font, options, default_text=\"None\", on_select=None):\n        self.rect = pygame.Rect(rect)\n        self.font = font\n        self.options = options[:]\n        self.open = False\n        self.selected = None\n        self.default_text = default_text\n        self.on_select = on_select\n        # Reduced debounce time for better responsiveness\n        self.last_click_time = 0\n        self.click_debounce = 0.05  # Reduced from 0.1 to 0.05 seconds (50ms)\n\n    def draw(self, surface):\n        bg = (20,28,20)\n        border = (36,60,36)\n\n        # Use simplified drawing in performance mode to improve responsiveness\n        if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):\n            # Simple rectangle for better performance\n            pygame.draw.rect(surface, bg, self.rect, border_radius=8)\n            pygame.draw.rect(surface, border, self.rect, 2, border_radius=8)\n        else:\n            # Full quality drawing\n            draw_shadow(surface, self.rect, radius=14, offset=(0,6), alpha=100)\n            draw_smooth_rect(surface, self.rect, bg, radius=14, border=2, border_color=border)\n\n        text = self.selected if self.selected else self.default_text\n        label = self.font.render(text, True, (240,240,240))\n        surface.blit(label, (self.rect.x+12, self.rect.y+(self.rect.h-label.get_height())//2))\n\n        # caret\n        pygame.draw.polygon(surface, (200,200,200),\n                            [(self.rect.right-22, self.rect.y+self.rect.h//2-4),\n                             (self.rect.right-12, self.rect.y+self.rect.h//2-4),\n                             (self.rect.right-17, self.rect.y+self.rect.h//2+4)])\n\n        if self.open:\n            opt_h = self.rect.h\n            panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))\n\n            # Simplified panel drawing for better performance\n            if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):\n                pygame.draw.rect(surface, (240,240,240), panel, border_radius=8)\n            else:\n                draw_shadow(surface, panel, radius=12, offset=(0,6), alpha=110)\n                pygame.draw.rect(surface, (240,240,240), panel, border_radius=12)\n\n            for i, opt in enumerate(self.options):\n                r = pygame.Rect(panel.x, panel.y+i*opt_h, panel.w, opt_h)\n                pygame.draw.rect(surface, (255,255,255), r, border_radius=0)\n                lab = self.font.render(opt, True, (40,40,40))\n                surface.blit(lab, (r.x+12, r.y+(r.h-lab.get_height())//2))\n                pygame.draw.line(surface, (230,230,230), (r.x, r.bottom-1), (r.right, r.bottom-1))\n\n    def handle_event(self, event):\n        import time\n        current_time = time.time()\n\n        # Simplified event handling - only use MOUSEBUTTONDOWN for immediate response\n        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:\n            # Check debounce only for rapid successive clicks\n            if current_time - self.last_click_time < self.click_debounce:\n                return\n\n            if self.open:\n                opt_h = self.rect.h\n                panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))\n\n                if panel.collidepoint(event.pos):\n                    # Option selection\n                    index = (event.pos[1]-panel.y)//opt_h\n                    if 0 <= index < len(self.options):\n                        self.selected = self.options[index]\n                        if self.on_select:\n                            self.on_select(self.selected)\n                    self.open = False\n                    self.last_click_time = current_time\n                else:\n                    # Click outside - close dropdown\n                    self.open = False\n                    self.last_click_time = current_time\n            else:\n                # Dropdown is closed - check if clicking on main rect\n                if self.rect.collidepoint(event.pos):\n                    self.open = True\n                    self.last_click_time = current_time\n\nclass ModalHistory:\n    def __init__(self, get_history):\n        self.get_history = get_history\n        self.visible = False\n\n    def draw(self, surface, screen_rect, font_header, font_row):\n        if not self.visible: return\n        overlay = pygame.Surface(screen_rect.size, pygame.SRCALPHA)\n        overlay.fill((0,0,0,160))\n        surface.blit(overlay, (0,0))\n        w = int(screen_rect.w*0.65); h = int(screen_rect.h*0.65)\n        panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)\n        draw_glass_card(surface, panel, radius=18, bg=(250,250,250,235), border=(60,60,60), border_alpha=80)\n        title = font_header.render(\"History\", True, (20,20,20))\n        surface.blit(title, (panel.x+16, panel.y+12))\n        headers = [\"#\", \"Time\", \"Steps\", \"Rank\", \"Mode\"]\n        col_w = [60, 200, 160, 120, w-60-200-160-120-48]\n        x = panel.x+24; y = panel.y+64\n        for i, head in enumerate(headers):\n            lab = font_row.render(head, True, (60,60,60)); surface.blit(lab, (x, y)); x += col_w[i]\n        y += 28; pygame.draw.line(surface, (220,220,220), (panel.x+16, y), (panel.right-16, y))\n        y += 12\n        history = self.get_history()\n        row_alt = (245,245,245)\n        for idx, item in enumerate(history, start=1):\n            if idx % 2 == 0:\n                pygame.draw.rect(surface, row_alt, pygame.Rect(panel.x+16, y-4, panel.w-32, 26), border_radius=6)\n            x = panel.x+24\n            cols = [str(idx), item.get(\"time_str\",\"--\"), str(item.get(\"steps\",\"--\")), item.get(\"rank\",\"--\"), item.get(\"mode\",\"--\")]\n            for i, val in enumerate(cols):\n                lab = font_row.render(val, True, (40,40,40)); surface.blit(lab, (x, y)); x += col_w[i]\n            y += 26\n            if y > panel.bottom-32: break\n\nclass ModalVictory:\n    def __init__(self, on_restart=None):\n        self.visible = False\n        self.on_restart = on_restart\n        self.time_str = \"\"\n        self.steps = 0\n        self.restart_btn = None\n\n    def show(self, time_str, steps):\n        self.visible = True\n        self.time_str = time_str\n        self.steps = steps\n\n    def hide(self):\n        self.visible = False\n\n    def draw(self, surface, screen_rect, font_header, font_ui):\n        if not self.visible: return\n\n        # Overlay\n        overlay = pygame.Surface(screen_rect.size, pygame.SRCALPHA)\n        overlay.fill((0,0,0,180))\n        surface.blit(overlay, (0,0))\n\n        # Victory panel\n        w, h = 400, 280\n        panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)\n\n        # Golden victory theme\n        draw_shadow(surface, panel, radius=20, offset=(0,12), alpha=140)\n        draw_glass_card(surface, panel, radius=20, bg=(255,215,0,220), border=(218,165,32), border_alpha=100)\n\n        # Victory title with glow effect\n        title_text = \"VICTORY!\"\n        title = font_header.render(title_text, True, (139,69,19))\n        title_glow = font_header.render(title_text, True, (255,255,255))\n\n        # Draw glow effect\n        glow_pos = (panel.centerx - title_glow.get_width()//2, panel.y + 30)\n        for offset_x in [-2, -1, 0, 1, 2]:\n            for offset_y in [-2, -1, 0, 1, 2]:\n                if offset_x != 0 or offset_y != 0:\n                    surface.blit(title_glow, (glow_pos[0] + offset_x, glow_pos[1] + offset_y))\n\n        # Main title\n        title_pos = (panel.centerx - title.get_width()//2, panel.y + 30)\n        surface.blit(title, title_pos)\n\n        # Stats\n        y_pos = panel.y + 100\n        stats_color = (101,67,33)\n\n        time_text = f\"Time: {self.time_str}\"\n        time_surface = font_ui.render(time_text, True, stats_color)\n        surface.blit(time_surface, (panel.centerx - time_surface.get_width()//2, y_pos))\n\n        y_pos += 40\n        steps_text = f\"Steps: {self.steps}\"\n        steps_surface = font_ui.render(steps_text, True, stats_color)\n        surface.blit(steps_surface, (panel.centerx - steps_surface.get_width()//2, y_pos))\n\n        # Restart button - giảm kích thước nhỏ hơn nữa\n        win_restart_img = getattr(self, 'win_restart_img', None)\n        if self.restart_btn is None:\n            # Tính kích thước giữ nguyên tỷ lệ\n            if win_restart_img:\n                btn_size = calculate_button_size(win_restart_img, target_width=110)  # Giảm từ 130 xuống 110\n                btn_w, btn_h = btn_size\n            else:\n                btn_w, btn_h = 110, 38\n\n            btn_x = panel.centerx - btn_w//2\n            btn_y = panel.y + h - btn_h - 15\n\n            self.restart_btn = Button(\n                (btn_x, btn_y, btn_w, btn_h),\n                \"\",  # Xóa text\n                font_ui,\n                self.handle_restart,\n                theme='green',\n                bg_image=win_restart_img,\n                keep_aspect=False\n            )\n\n        self.restart_btn.draw(surface)\n\n    def handle_restart(self):\n        self.hide()\n        if self.on_restart:\n            self.on_restart()\n\n    def handle_event(self, event):\n        if not self.visible: return\n        if self.restart_btn:\n            self.restart_btn.handle_event(event)\n\n        # Close on ESC or click outside\n        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:\n            self.hide()\n        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:\n            # Check if click is outside the panel (close modal)\n            w, h = 400, 280\n            screen_rect = pygame.display.get_surface().get_rect()\n            panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)\n            if not panel.collidepoint(event.pos):\n                self.hide()\n\n# ---------- Sprites ----------\nclass FloatingBanana(pygame.sprite.Sprite):\n    def __init__(self, image, cell_size):\n        super().__init__()\n        self.base_image = image\n        self.cell_size = cell_size\n        self.image = image\n        self.rect = self.image.get_rect()\n        self.t = 0.0\n\n    def update(self, dt):\n        self.t += dt\n        dy = math.sin(self.t*2.2) * (self.cell_size*0.10)\n        self.offset = (0, int(dy))\n\n    def draw(self, surface, pos_px):\n        shadow = pygame.Surface((self.rect.w, self.rect.h//6), pygame.SRCALPHA)\n        pygame.draw.ellipse(shadow, (0,0,0,80), shadow.get_rect())\n        surface.blit(shadow, (pos_px[0], pos_px[1]+self.rect.h-6))\n        surface.blit(self.base_image, (pos_px[0], pos_px[1]+self.offset[1]))\n\nclass MonkeyIdle(pygame.sprite.Sprite):\n    def __init__(self, frames, fallback, cell_size):\n        super().__init__()\n        self.frames = frames if frames else [fallback]\n        self.cell_size = cell_size\n        self.index = 0; self.timer = 0.0; self.fps = 6 if len(self.frames)>1 else 0\n\n    def update(self, dt):\n        if self.fps>0 and len(self.frames)>1:\n            self.timer += dt\n            if self.timer >= 1.0/self.fps:\n                self.timer = 0.0; self.index = (self.index+1) % len(self.frames)\n\n    def current(self):\n        return self.frames[self.index]\n\n\n# ---------- App ----------\nclass App:\n    def __init__(self):\n        self.cell_size = None\n        self.maze_rect = None\n        pygame.init()\n        flags = pygame.FULLSCREEN if FULLSCREEN else 0\n        self.screen = pygame.display.set_mode((0, 0) if FULLSCREEN else (1024, 768), flags)\n        pygame.display.set_caption(GAME_TITLE)\n        self.clock = pygame.time.Clock()\n        self.window_rect = self.screen.get_rect()\n        self.running = True\n\n        # Performance optimization - Cache system\n        self._image_cache = {}\n        self._surface_cache = {}\n        self._last_cell_size = None\n        self._bg_cache = {}\n\n        # Performance monitoring and optimization\n        self.fps_samples = []\n        self.current_fps = FPS\n        self.performance_mode = PERFORMANCE_MODE\n        self.frame_skip_counter = 0\n        self.dirty_regions = []\n        self.last_draw_time = 0\n        self.skip_expensive_effects = False\n\n        # Precomputed maze surface for small sizes\n        self._maze_surface = None\n        self._maze_surface_dirty = True\n        self._ui_surface = None\n        self._ui_surface_dirty = True\n\n        # assets\n        self.bg_jungle = load_image(IMG(\"bg_jungle.png\"))\n        self.bg_start = load_image(IMG(\"bg_start.png\"))\n        self.tile_wall = load_image(IMG(\"tile_wall.png\"))\n        self.monkey_img = load_image(IMG(\"monkey.png\"))\n        self.banana_img = load_image(IMG(\"banana_rainbow.png\"))\n\n        # button assets\n        self.btn_assets = {\n            'start': load_image(IMG(\"button/start_btn.png\")),\n            'restart': load_image(IMG(\"button/restart_btn.png\")),\n            'close': load_image(IMG(\"button/close_btn.png\")),\n            'exit': load_image(IMG(\"button/exit_btn.png\")),\n            'minimize': load_image(IMG(\"button/minimize_btn.png\")),\n            'back': load_image(IMG(\"button/back_btn.png\")),\n            'history': load_image(IMG(\"button/history_btn.png\")),\n            'auto': load_image(IMG(\"button/auto_btn.png\")),\n            'small': load_image(IMG(\"button/small_btn.png\")),\n            'win_restart': load_image(IMG(\"button/win_restart_btn.png\"))\n        }\n\n        # floor tiles\n        self.floor_tiles = []\n        tiles_dir = os.path.join(ASSETS, \"tiles\")\n        for name in sorted(os.listdir(tiles_dir)):\n            if name.lower().endswith(\".png\"):\n                self.floor_tiles.append(load_image(os.path.join(tiles_dir, name)))\n\n        # fonts\n        self.font_title = try_load_font(64)\n        self.font_ui = try_load_font(26)\n        self.font_small = try_load_font(20)\n\n        # state\n        self.state = \"start\"\n        self.paused = False\n        self.auto_on = False\n        self.selected_algo = None\n        self.steps = 0\n        self.timer = 0.0\n        self.start_time = None\n        self.history = []\n        self.game_won = False\n        self.modal_history = ModalHistory(lambda: self.history)\n        self.modal_victory = ModalVictory(self.restart_level)\n        self.modal_victory.win_restart_img = self.btn_assets['win_restart']\n\n        # Lưu kích thước windowed và trạng thái fullscreen\n        self.windowed_size = (1024, 768)  # Kích thước khi không full màn hình\n        self.is_fullscreen = FULLSCREEN  # Ban đầu là full màn hình\n        self.is_minimized = False  # Trạng thái thu nhỏ\n\n        # Window dragging state\n        self.dragging = False\n        self.drag_offset = (0, 0)\n\n        # Window controls - 3 nút ở góc trên phải\n        btn_size = 48  # Kích thước nút - tăng lên\n        btn_y = 10     # Vị trí Y - dời lên cao hơn\n        btn_gap = 8    # Khoảng cách giữa các nút\n\n        # Tính vị trí từ phải sang trái (Exit -> Maximize -> Minimize)\n        x_exit = self.window_rect.w - 10 - btn_size\n        x_maximize = x_exit - btn_gap - btn_size\n        x_minimize = x_maximize - btn_gap - btn_size\n\n        # Tạo 3 nút mới với assets đúng\n        # Nút trái: Hide (ẩn cửa sổ)\n        self.btn_min = Button(\n            (x_minimize, btn_y, btn_size, btn_size),\n            \"\", self.font_small, self.hide_window,\n            theme='yellow',\n            bg_image=self.btn_assets['minimize'],\n            keep_aspect=False\n        )\n\n        # Nút giữa: Minimize (thu nhỏ cửa sổ)\n        self.btn_max = Button(\n            (x_maximize, btn_y, btn_size, btn_size),\n            \"\", self.font_small, self.shrink_window,\n            theme='blue',\n            bg_image=self.btn_assets['small'],\n            keep_aspect=False\n        )\n\n        self.btn_close = Button(\n            (x_exit, btn_y, btn_size, btn_size),\n            \"\", self.font_small, self.quit,\n            theme='red',\n            bg_image=self.btn_assets['close'],  # Dùng close_btn thay vì exit_btn\n            keep_aspect=False\n        )\n\n        # start screen - tăng kích thước nút start\n        start_size = calculate_button_size(self.btn_assets['start'], target_width=240)  # Tăng từ 180 lên 240\n        self.btn_start = Button((0, 0, start_size[0], start_size[1]), \"\", self.font_ui, self.goto_game, theme='green', bg_image=self.btn_assets['start'], keep_aspect=False)\n\n        # game UI\n        self.compute_layout()\n\n        # Tính toán vị trí sidebar và margin\n        sidebar_left = self.window_rect.w - RIGHT_PANEL_W\n        margin = 30  # Margin từ mép sidebar\n        cur_y = 120  # Vị trí Y bắt đầu (tránh window controls)\n\n        # Chiều rộng các nút\n        target_btn_w = RIGHT_PANEL_W - (margin * 2)  # Chiều rộng toàn bộ\n        half_btn_w = (target_btn_w - 10) // 2  # Chiều rộng mỗi nút (2 nút/dòng)\n        btn_gap = 10  # Khoảng cách giữa 2 nút trong cùng 1 dòng\n        row_spacing = 12  # Khoảng cách giữa các dòng\n\n        # Vị trí X bắt đầu (căn giữa trong sidebar)\n        spx = sidebar_left + margin\n\n        # Tính kích thước các nút giữ nguyên aspect ratio\n        restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)\n        play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)\n        pause_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)\n        auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)\n        history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)\n        back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)\n\n        # Dòng 1: Restart và Auto\n        row1_height = max(restart_size[1], auto_size[1])\n        self.btn_restart = Button((spx, cur_y, half_btn_w, row1_height), \"\", self.font_ui, self.restart_level, theme='orange', bg_image=self.btn_assets['restart'], keep_aspect=False)\n        self.btn_auto = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height), \"\", self.font_ui, self.toggle_auto, theme='blue', bg_image=self.btn_assets['auto'], keep_aspect=False)\n        cur_y += row1_height + row_spacing\n\n        # Dòng 2: Play và Pause\n        row2_height = max(play_size[1], pause_size[1])\n        self.btn_play = Button((spx, cur_y, half_btn_w, row2_height), \"\", self.font_ui, self.toggle_play, theme='green', bg_image=self.btn_assets['small'], keep_aspect=False)\n        self.btn_pause = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height), \"\", self.font_ui, self.toggle_play, theme='yellow', bg_image=self.btn_assets['small'], keep_aspect=False)\n        cur_y += row2_height + row_spacing\n\n        # Dòng 3: Dropdown (toàn bộ chiều rộng)\n        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, [\"BFS\",\"DFS\",\"UCS\",\"A*\",\"Bidirectional Search\"], default_text=\"Select Solving Algorithm\", on_select=self.set_algo)\n        cur_y += 40 + row_spacing\n\n        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung\n        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, [\"DFS\", \"Kruskal\", \"Binary Tree\", \"Wilson\", \"Recursive Division\"], default_text=\"Select Generation Algorithm\", on_select=self.set_generation_algo)\n        cur_y += 40 + row_spacing\n\n        # Dòng 3.6: Nút Generate\n        generate_size = calculate_button_size(self.btn_assets['restart'], target_width=target_btn_w)  # Sử dụng restart asset cho generate\n        self.btn_generate = Button((spx, cur_y, target_btn_w, generate_size[1]), \"Generate Maze\", self.font_ui, self.generate_maze, theme='green', keep_aspect=False)\n        cur_y += generate_size[1] + row_spacing\n\n        # Dòng 4: History và Back\n        row4_height = max(history_size[1], back_size[1])\n        self.btn_history = Button((spx, cur_y, half_btn_w, row4_height), \"\", self.font_ui, self.open_history, theme='purple', bg_image=self.btn_assets['history'], keep_aspect=False)\n        self.btn_back = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height), \"\", self.font_ui, self.goto_start, theme='red', bg_image=self.btn_assets['back'], keep_aspect=False)\n\n        # maze\n        self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()\n        self.maze = self.MazeGenerated\n        self.player = [1,1]  # Khởi tạo từ (1,1) thay vì (0,0)\n        self.prepare_sprites()\n\n        # prebuild random floor map for repeatability\n        random.seed(42)\n        self.floor_map = [[random.randrange(len(self.floor_tiles)) for _ in range(MAZE_COLS)] for _ in range(MAZE_ROWS)]\n\n        # Cập nhật scale các nút game ngay sau khi khởi tạo\n        self.update_game_buttons()\n\n    def prepare_sprites(self):\n        cell = self.cell_size\n        # Clear cache if cell size changed\n        if self._last_cell_size != cell:\n            self.clear_size_dependent_cache()\n            self._last_cell_size = cell\n\n        def scale_to_cell(img, ratio=0.9):\n            w = h = int(cell*ratio)\n            return self.get_scaled_image(img, (w,h))\n\n        # Pre-scale and cache all floor tiles for current cell size\n        self.scaled_floor_tiles = []\n        for tile in self.floor_tiles:\n            self.scaled_floor_tiles.append(self.get_scaled_image(tile, (cell, cell)))\n\n        # Pre-scale wall tile\n        self.scaled_wall_tile = self.get_scaled_image(self.tile_wall, (cell, cell))\n\n        # idle frames\n        stand_dir = os.path.join(ASSETS, \"monkey_stand\")\n        frames = []\n        if os.path.exists(stand_dir):\n            for name in sorted(os.listdir(stand_dir)):\n                if name.lower().endswith((\".png\",\".jpg\",\".jpeg\")):\n                    frames.append(scale_to_cell(load_image(os.path.join(stand_dir, name))))\n        self.monkey_idle = MonkeyIdle(frames, scale_to_cell(self.monkey_img), self.cell_size)\n        self.banana = FloatingBanana(scale_to_cell(self.banana_img, 0.85), self.cell_size)\n\n    # ---- Window controls\n    def update_window_controls(self):\n        \"\"\"Cập nhật vị trí window controls khi cửa sổ thay đổi kích thước\"\"\"\n        btn_size = 48  # Tăng kích thước nút\n        btn_y = 10  # Vị trí Y - cao hơn\n        btn_gap = 8\n\n        x_exit = self.window_rect.w - 10 - btn_size\n        x_maximize = x_exit - btn_gap - btn_size\n        x_minimize = x_maximize - btn_gap - btn_size\n\n        self.btn_min.rect = pygame.Rect(x_minimize, btn_y, btn_size, btn_size)\n        self.btn_max.rect = pygame.Rect(x_maximize, btn_y, btn_size, btn_size)\n        self.btn_close.rect = pygame.Rect(x_exit, btn_y, btn_size, btn_size)\n\n        # Re-scale background images\n        if self.btn_min.bg_image:\n            self.btn_min.scaled_bg = pygame.transform.smoothscale(self.btn_min.bg_image, (btn_size, btn_size))\n        if self.btn_max.bg_image:\n            self.btn_max.scaled_bg = pygame.transform.smoothscale(self.btn_max.bg_image, (btn_size, btn_size))\n        if self.btn_close.bg_image:\n            self.btn_close.scaled_bg = pygame.transform.smoothscale(self.btn_close.bg_image, (btn_size, btn_size))\n\n    def update_game_buttons(self):\n        \"\"\"Cập nhật kích thước và vị trí các nút game khi cửa sổ thay đổi\"\"\"\n        # Scale sidebar width theo tỷ lệ cửa sổ\n        scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)\n        scale_factor = max(0.5, min(1.0, scale_factor))\n\n        scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)\n        scaled_panel_w = max(200, scaled_panel_w)  # Tối thiểu 200px\n\n        # Tính toán vị trí sidebar và margin\n        sidebar_left = self.window_rect.w - scaled_panel_w\n        margin = int(30 * scale_factor)\n        margin = max(15, margin)  # Margin tối thiểu\n        cur_y = 120\n\n        # Chiều rộng các nút\n        target_btn_w = scaled_panel_w - (margin * 2)\n        half_btn_w = (target_btn_w - 10) // 2\n        btn_gap = 10\n        row_spacing = max(8, int(12 * scale_factor))\n\n        # Vị trí X bắt đầu\n        spx = sidebar_left + margin\n\n        # Tính lại kích thước cho các nút\n        restart_size = calculate_button_size(self.btn_assets['restart'], target_width=half_btn_w)\n        play_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)\n        pause_size = calculate_button_size(self.btn_assets['small'], target_width=half_btn_w)\n        auto_size = calculate_button_size(self.btn_assets['auto'], target_width=half_btn_w)\n        history_size = calculate_button_size(self.btn_assets['history'], target_width=half_btn_w)\n        back_size = calculate_button_size(self.btn_assets['back'], target_width=half_btn_w)\n\n        # Dòng 1: Restart và Auto\n        row1_height = max(restart_size[1], auto_size[1])\n        self.btn_restart.rect = pygame.Rect(spx, cur_y, half_btn_w, row1_height)\n        self.btn_restart.scaled_bg = pygame.transform.smoothscale(self.btn_restart.bg_image, (half_btn_w, row1_height))\n        self.btn_auto.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row1_height)\n        self.btn_auto.scaled_bg = pygame.transform.smoothscale(self.btn_auto.bg_image, (half_btn_w, row1_height))\n        cur_y += row1_height + row_spacing\n\n        # Dòng 2: Play và Pause\n        row2_height = max(play_size[1], pause_size[1])\n        self.btn_play.rect = pygame.Rect(spx, cur_y, half_btn_w, row2_height)\n        self.btn_play.scaled_bg = pygame.transform.smoothscale(self.btn_play.bg_image, (half_btn_w, row2_height))\n        self.btn_pause.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row2_height)\n        self.btn_pause.scaled_bg = pygame.transform.smoothscale(self.btn_pause.bg_image, (half_btn_w, row2_height))\n        cur_y += row2_height + row_spacing\n\n        # Dòng 3: Dropdown\n        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)\n        cur_y += 40 + row_spacing\n\n        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung\n        self.maze_gen_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)\n        cur_y += 40 + row_spacing\n\n        # Dòng 3.6: Nút Generate\n        generate_size = calculate_button_size(self.btn_assets['restart'], target_width=target_btn_w)  # Sử dụng restart asset cho generate\n        self.btn_generate.rect = pygame.Rect(spx, cur_y, target_btn_w, generate_size[1])\n        cur_y += generate_size[1] + row_spacing\n\n        # Dòng 4: History và Back\n        row4_height = max(history_size[1], back_size[1])\n        self.btn_history.rect = pygame.Rect(spx, cur_y, half_btn_w, row4_height)\n        self.btn_history.scaled_bg = pygame.transform.smoothscale(self.btn_history.bg_image, (half_btn_w, row4_height))\n        self.btn_back.rect = pygame.Rect(spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height)\n        self.btn_back.scaled_bg = pygame.transform.smoothscale(self.btn_back.bg_image, (half_btn_w, row4_height))\n\n    def hide_window(self):\n        \"\"\"Ẩn cửa sổ xuống taskbar (iconify)\"\"\"\n        try:\n            pygame.display.iconify()\n        except:\n            pass\n\n    def shrink_window(self):\n        \"\"\"Thu nhỏ cửa sổ về 70% màn hình (giữ tỷ lệ) hoặc phóng to lại fullscreen\"\"\"\n        global FULLSCREEN\n\n        if self.is_minimized:\n            # Đang ở trạng thái thu nhỏ -> phóng to về fullscreen\n            FULLSCREEN = True\n            self.is_fullscreen = True\n            self.is_minimized = False\n            pygame.display.set_mode((0, 0), pygame.FULLSCREEN)\n        else:\n            # Đang fullscreen -> thu nhỏ về 70% màn hình (giữ tỷ lệ)\n            FULLSCREEN = False\n            self.is_fullscreen = False\n            self.is_minimized = True\n\n            # Lấy kích thước màn hình sử dụng pygame (cross-platform)\n            display_info = pygame.display.Info()\n            screen_width = display_info.current_w\n            screen_height = display_info.current_h\n\n            # Tính 70% kích thước màn hình nhưng giữ tỷ lệ khung hình\n            target_width = int(screen_width * 0.7)\n            target_height = int(screen_height * 0.7)\n\n            # Giữ tỷ lệ khung hình của màn hình gốc\n            screen_ratio = screen_width / screen_height\n\n            # Tính kích thước cửa sổ giữ nguyên tỷ lệ\n            if target_width / target_height > screen_ratio:\n                # Giới hạn bởi chiều cao\n                window_height = target_height\n                window_width = int(window_height * screen_ratio)\n            else:\n                # Giới hạn bởi chiều rộng\n                window_width = target_width\n                window_height = int(window_width / screen_ratio)\n\n            # Đảm bảo kích thước tối thiểu\n            window_width = max(640, window_width)\n            window_height = max(480, window_height)\n\n            # Căn giữa cửa sổ trước khi tạo\n            self.center_window(window_width, window_height)\n\n            # Tạo cửa sổ mới với kích thước đã tính\n            pygame.display.set_mode((window_width, window_height))\n\n        # Cập nhật sau khi thay đổi kích thước\n        self.screen = pygame.display.get_surface()\n        self.window_rect = self.screen.get_rect()\n        self.compute_layout()\n        self.update_window_controls()\n        self.prepare_sprites()\n\n    def center_window(self, width, height):\n        \"\"\"Đặt cửa sổ ở giữa màn hình - cross-platform version\"\"\"\n        try:\n            # Lấy kích thước màn hình sử dụng pygame\n            display_info = pygame.display.Info()\n            screen_width = display_info.current_w\n            screen_height = display_info.current_h\n\n            # Tính vị trí căn giữa\n            x = (screen_width - width) // 2\n            y = (screen_height - height) // 2\n\n            # Đặt vị trí cửa sổ sử dụng environment variable (cross-platform)\n            import os\n            os.environ['SDL_WINDOW_POS'] = f'{x},{y}'\n\n        except Exception as e:\n            # Nếu không thể căn giữa, để pygame tự xử lý\n            pass\n\n    def toggle_fullscreen(self):\n        global FULLSCREEN\n        FULLSCREEN = not FULLSCREEN\n        if FULLSCREEN:\n            pygame.display.set_mode((0,0), pygame.FULLSCREEN)\n        else:\n            pygame.display.set_mode((1024,768))\n        self.screen = pygame.display.get_surface()\n        self.window_rect = self.screen.get_rect()\n        self.compute_layout()\n        self.update_window_controls()  # Cập nhật vị trí window controls\n        self.prepare_sprites()  # Cập nhật sprites với cell size mới\n\n    def quit(self):\n        self.running = False\n\n    # ---- Layout\n    def compute_layout(self):\n        screen = self.window_rect\n\n        # Scale sidebar width theo tỷ lệ cửa sổ\n        scale_factor = min(screen.w / 1920, screen.h / 1080)\n        scale_factor = max(0.5, min(1.0, scale_factor))\n        scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)\n        scaled_panel_w = max(200, scaled_panel_w)\n\n        left_space = screen.w - scaled_panel_w\n        margin = max(12, int(24 * scale_factor))\n        avail_w = left_space - margin*2\n        avail_h = screen.h - margin*2\n        cell_w = avail_w // MAZE_COLS\n        cell_h = avail_h // MAZE_ROWS\n        self.cell_size = min(cell_w, cell_h)\n        maze_w = self.cell_size * MAZE_COLS\n        maze_h = self.cell_size * MAZE_ROWS\n        self.maze_rect = pygame.Rect((left_space - maze_w)//2 + margin, (screen.h-maze_h)//2, maze_w, maze_h)\n\n        # Cập nhật lại kích thước và vị trí các nút game (chỉ khi đã khởi tạo)\n        if hasattr(self, 'btn_restart'):\n            self.update_game_buttons()\n\n    # ---- State transitions\n    def goto_start(self):\n        self.save_run(label=\"Manual\" if not self.auto_on else f\"Auto ({self.selected_algo or 'None'})\")\n        self.state = \"start\"; self.modal_history.visible=False\n\n    def goto_game(self):\n        self.state = \"game\"; self.reset_run()\n\n    def reset_run(self):\n        self.steps = 0; self.timer = 0.0; self.start_time = time.time()\n        self.paused = False; self.auto_on=False\n        self.player= [1,1]  # Bắt đầu từ (1,1) thay vì (0,0) vì viền ngoài là tường\n        self.maze = self.MazeGenerated\n        self.prepare_sprites()\n        self.modal_victory.hide()\n\n    def restart_level(self): self.reset_run()\n    def toggle_play(self): self.paused = not self.paused\n    def toggle_auto(self): self.auto_on = not self.auto_on\n    def set_algo(self, name): self.selected_algo = name\n    def set_generation_algo(self, name):\n        \"\"\"Thiết lập thuật toán sinh mê cung được chọn\"\"\"\n        self.selected_generation_algo = name\n\n    def generate_maze(self):\n        \"\"\"Sinh mê cung mới dựa trên thuật toán được chọn\"\"\"\n        if not hasattr(self, 'selected_generation_algo') or self.selected_generation_algo is None:\n            return\n\n        # Tạo model mới và set thuật toán\n        generation_model = GenerationModel(MAZE_COLS, MAZE_ROWS, self.selected_generation_algo)\n\n        # Sinh mê cung\n        self.MazeGenerated = generation_model.generate_maze()\n        self.maze = self.MazeGenerated\n\n        # Reset lại vị trí người chơi về start position\n        self.player = [1, 1]\n\n        # Reset game state nhưng không gọi reset_run() để tránh lặp\n        self.steps = 0\n        self.timer = 0.0\n        self.start_time = time.time()\n        self.paused = False\n        self.game_won = False\n\n        # Cập nhật sprites và invalidate cache\n        self.prepare_sprites()\n        self.invalidate_maze_surface()  # Important for performance optimization\n        self.modal_victory.hide()\n\n    def open_history(self): self.modal_history.visible = True\n\n    def save_run(self, label=\"Manual\"):\n        if self.start_time is None: return\n        duration = self.timer; steps=self.steps\n        if duration<=0 and steps<=0: return\n        rank = \"S\" if duration<30 and steps<50 else (\"A\" if duration<60 else (\"B\" if duration<120 else \"C\"))\n        mode = label if \"Auto\" in label else (\"Manual\" if not self.auto_on else f\"Auto ({self.selected_algo or 'None'})\")\n        self.history.append({\"time_str\": f\"{int(duration//60):02d}:{int(duration%60):02d}\", \"steps\": steps, \"rank\": rank, \"mode\": mode})\n\n    # ---- Input\n    def handle_events(self):\n        for event in pygame.event.get():\n            if event.type == pygame.QUIT: self.quit()\n\n            # Window dragging - chỉ hoạt động khi không fullscreen\n            if not self.is_fullscreen:\n                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:\n                    # Kiểm tra xem có click vào vùng title bar không (vùng trên cùng, tránh các nút)\n                    if event.pos[1] < 60:  # Vùng title bar\n                        # Kiểm tra xem có click vào các nút window control không\n                        clicked_button = False\n                        for btn in (self.btn_close, self.btn_max, self.btn_min):\n                            if btn.rect.collidepoint(event.pos):\n                                clicked_button = True\n                                break\n\n                        if not clicked_button:\n                            self.dragging = True\n                            self.drag_offset = event.pos\n\n                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:\n                    self.dragging = False\n\n                elif event.type == pygame.MOUSEMOTION:\n                    if self.dragging:\n                        # Di chuyển cửa sổ - simplified cross-platform version\n                        try:\n                            # Lấy vị trí chuột hiện tại\n                            mouse_x, mouse_y = pygame.mouse.get_pos()\n                            # Tính toán vị trí mới\n                            new_x = mouse_x - self.drag_offset[0]\n                            new_y = mouse_y - self.drag_offset[1]\n                            # Đặt lại vị trí cửa sổ cho lần tạo tiếp theo\n                            os.environ['SDL_WINDOW_POS'] = f'{new_x},{new_y}'\n                        except:\n                            pass\n\n            if self.state == \"start\": self.btn_start.handle_event(event)\n            for b in (self.btn_close, self.btn_max, self.btn_min): b.handle_event(event)\n            if self.state == \"game\":\n                # Xử lý modal victory trước\n                if self.modal_victory.visible:\n                    self.modal_victory.handle_event(event)\n                else:\n                    for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)\n                    self.dropdown.handle_event(event)\n                    self.maze_gen_dropdown.handle_event(event)\n                    if event.type == pygame.KEYDOWN and not self.paused:\n                        if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)\n                        if event.key in (pygame.K_RIGHT, pygame.K_d): self.move(1,0)\n                        if event.key in (pygame.K_UP, pygame.K_w): self.move(0,-1)\n                        if event.key in (pygame.K_DOWN, pygame.K_s): self.move(0,1)\n            if self.modal_history.visible and (event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN)):\n                self.modal_history.visible=False\n\n    def move(self, dx, dy):\n        if self.game_won: return  # Không cho di chuyển khi đã thắng\n\n        c, r = self.player; nc, nr = c+dx, r+dy\n        if 0 <= nc < MAZE_COLS and 0 <= nr < MAZE_ROWS:\n            # Cho phép di chuyển trên Path (1), Start (2), và End (3)\n            if self.maze[nr][nc].status in [1, 2, 3]:\n                self.player=[nc,nr]; self.steps += 1\n\n                # Kiểm tra chiến thắng (chạm chuối ở vị trí thực tế)\n                if nc == MAZE_COLS-2 and nr == MAZE_ROWS-2:\n                    self.game_won = True\n                    self.paused = True\n                    time_str = f\"{int(self.timer//60):02d}:{int(self.timer%60):02d}\"\n                    self.modal_victory.show(time_str, self.steps)\n\n    # ---- Update / Draw\n    def update(self, dt):\n        if self.state==\"game\" and not self.paused:\n            self.timer += dt; self.monkey_idle.update(dt); self.banana.update(dt)\n\n    def draw_start(self):\n        # background full, no blur\n        bg = pygame.transform.smoothscale(self.bg_start, (self.window_rect.w, self.window_rect.h))\n        self.screen.blit(bg, (0, 0))\n\n        # Cập nhật kích thước nút START theo tỷ lệ cửa sổ\n        base_width = 240  # Kích thước cơ bản\n        scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)  # Tỷ lệ so với fullscreen chuẩn\n        scale_factor = max(0.5, min(1.0, scale_factor))  # Giới hạn từ 50% đến 100%\n\n        new_width = int(base_width * scale_factor)\n        start_size = calculate_button_size(self.btn_assets['start'], target_width=new_width)\n\n        self.btn_start.rect = pygame.Rect(0, 0, start_size[0], start_size[1])\n        self.btn_start.scaled_bg = pygame.transform.smoothscale(self.btn_start.bg_image, start_size)\n\n        # place START slightly left and lower (~82% h)\n        self.btn_start.rect.center = (int(self.window_rect.centerx * 0.85), int(self.window_rect.h * 0.82))\n        self.btn_start.draw(self.screen)\n\n        # Window controls - vẽ cuối cùng để đảm bảo không bị đè\n        for b in (self.btn_min, self.btn_max, self.btn_close):\n            b.draw(self.screen)\n\n    def draw_game(self):\n        # Update performance monitoring\n        self.update_performance_mode()\n\n        # Skip frame if in performance mode\n        if self.should_skip_frame():\n            return\n\n        # jungle background full - use cached version\n        bg_scaled = self.get_scaled_background(self.bg_jungle, (self.window_rect.w, self.window_rect.h))\n        self.screen.blit(bg_scaled, (0,0))\n\n        # Scale sidebar width theo tỷ lệ cửa sổ\n        scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)\n        scale_factor = max(0.5, min(1.0, scale_factor))\n        scaled_panel_w = int(RIGHT_PANEL_W * scale_factor)\n        scaled_panel_w = max(200, scaled_panel_w)\n\n        # sidebar card - use optimized drawing for small windows\n        sidebar = pygame.Rect(self.window_rect.w-scaled_panel_w+int(10*scale_factor), 60, scaled_panel_w-int(20*scale_factor), self.window_rect.h-70)\n\n        if self.skip_expensive_effects:\n            # Simple sidebar background for performance\n            pygame.draw.rect(self.screen, (18,24,18), sidebar, border_radius=12)\n        else:\n            # Full quality sidebar\n            draw_glass_card(self.screen, sidebar, radius=22, bg=(18,24,18,190), border=(110,150,110), border_alpha=70)\n\n        # chips - căn giữa text\n        t = f\"{int(self.timer//60):02d}:{int(self.timer%60):02d}\"\n        chip_h = max(28, int(36 * scale_factor)); x0 = sidebar.x+int(18*scale_factor); y0 = sidebar.y+int(50*scale_factor)\n        chip1 = pygame.Rect(x0, y0, int(140*scale_factor), chip_h)\n\n        if self.skip_expensive_effects:\n            # Simple chip backgrounds\n            pygame.draw.rect(self.screen, (26,34,26), chip1, border_radius=8)\n        else:\n            draw_smooth_rect(self.screen, chip1, (26,34,26,220), radius=18, border=2, border_color=(86,116,86))\n\n        time_label = self.font_small.render(\"⏱  \"+t, True, (235,235,235))\n        time_x = chip1.x + (chip1.width - time_label.get_width()) // 2  # Căn giữa\n        time_y = chip1.y + (chip1.height - time_label.get_height()) // 2  # Căn giữa\n        self.screen.blit(time_label, (time_x, time_y))\n\n        chip2 = pygame.Rect(chip1.right+int(10*scale_factor), y0, int(120*scale_factor), chip_h)\n\n        if self.skip_expensive_effects:\n            pygame.draw.rect(self.screen, (26,34,26), chip2, border_radius=8)\n        else:\n            draw_smooth_rect(self.screen, chip2, (26,34,26,220), radius=18, border=2, border_color=(86,116,86))\n\n        steps_label = self.font_small.render(\"\uD83D\uDEB6  \"+str(self.steps), True, (235,235,235))\n        steps_x = chip2.x + (chip2.width - steps_label.get_width()) // 2  # Căn giữa\n        steps_y = chip2.y + (chip2.height - steps_label.get_height()) // 2  # Căn giữa\n        self.screen.blit(steps_label, (steps_x, steps_y))\n\n        # buttons - cập nhật vị trí theo layout mới (2 nút/dòng)\n        spx = sidebar.x+int(20*scale_factor); cur_y = y0 + chip_h + int(24*scale_factor)\n        half_btn_w = (scaled_panel_w - int(48*scale_factor)) // 2\n        spacing = max(4, int(8*scale_factor))\n\n        # Dòng 1: Restart + Auto\n        self.btn_restart.rect.topleft = (spx, cur_y)\n        self.btn_auto.rect.topleft = (spx + half_btn_w + 8, cur_y)\n        cur_y += max(self.btn_restart.rect.height, self.btn_auto.rect.height) + spacing\n\n        # Dòng 2: Play + Pause\n        self.btn_play.rect.topleft = (spx, cur_y)\n        self.btn_pause.rect.topleft = (spx + half_btn_w + 8, cur_y)\n        cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing\n\n        # Dòng 3: Dropdown (full width)\n        self.dropdown.rect.topleft = (spx, cur_y)\n        cur_y += 36 + spacing\n\n        # Dòng 3.5: Dropdown cho thuật toán sinh mê cung\n        self.maze_gen_dropdown.rect.topleft = (spx, cur_y)\n        cur_y += 36 + spacing\n\n        # Dòng 3.6: Nút Generate\n        self.btn_generate.rect.topleft = (spx, cur_y)\n        cur_y += self.btn_generate.rect.height + spacing\n\n        # Dòng 4: History + Back\n        self.btn_history.rect.topleft = (spx, cur_y)\n        self.btn_back.rect.topleft = (spx + half_btn_w + 8, cur_y)\n        for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back):\n            b.draw(self.screen)\n        self.btn_generate.draw(self.screen)\n\n        # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác\n        self.dropdown.draw(self.screen)\n        self.maze_gen_dropdown.draw(self.screen)\n\n        # maze frame card - simplified for performance mode\n        if self.skip_expensive_effects:\n            pygame.draw.rect(self.screen, (12,22,12), self.maze_rect, border_radius=8)\n        else:\n            draw_glass_card(self.screen, self.maze_rect, radius=16, bg=(12,22,12,140), border=(90,120,90), border_alpha=55)\n\n        # Use optimized maze rendering for small cells\n        if self.cell_size < MIN_CELL_SIZE_FOR_DETAILS:\n            # Use pre-rendered maze surface for better performance\n            maze_surface = self.get_optimized_maze_surface()\n            self.screen.blit(maze_surface, self.maze_rect.topleft)\n        else:\n            # Standard maze rendering for larger cells\n            cell = self.cell_size\n            for r in range(MAZE_ROWS):\n                for c in range(MAZE_COLS):\n                    x = self.maze_rect.x + c * cell\n                    y = self.maze_rect.y + r * cell\n                    idx = self.floor_map[r][c]\n                    # Use pre-scaled cached tiles instead of scaling every frame\n                    self.screen.blit(self.scaled_floor_tiles[idx], (x,y))\n\n            # draw walls using cached scaled tile\n            for r in range(MAZE_ROWS):\n                for c in range(MAZE_COLS):\n                    if self.maze[r][c].status == 0:\n                        x = self.maze_rect.x + c*cell; y = self.maze_rect.y + r*cell\n                        # Use pre-scaled cached wall tile\n                        self.screen.blit(self.scaled_wall_tile, (x, y))\n\n        # draw player\n        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2\n        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2\n        self.screen.blit(self.monkey_idle.current(), (px, py))\n\n        # draw banana goal - skip floating animation in performance mode\n        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2\n        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2\n\n        if self.skip_expensive_effects:\n            # Static banana without animation\n            self.screen.blit(self.banana.base_image, (gx, gy))\n        else:\n            # Animated floating banana\n            self.banana.draw(self.screen, (gx, gy))\n\n        # window buttons - vẽ cuối cùng để đảm bảo không bị đè\n        for b in (self.btn_min, self.btn_max, self.btn_close):\n            b.draw(self.screen)\n\n        # history modal\n        self.modal_history.draw(self.screen, self.window_rect, self.font_ui, self.font_small)\n\n        # victory modal\n        self.modal_victory.draw(self.screen, self.window_rect, self.font_title, self.font_ui)\n\n    def get_cached_surface(self, key, creator_func):\n        \"\"\"Cache system for expensive surface operations\"\"\"\n        if key not in self._surface_cache:\n            self._surface_cache[key] = creator_func()\n        return self._surface_cache[key]\n\n    def clear_size_dependent_cache(self):\n        \"\"\"Clear cache when window size changes\"\"\"\n        self._image_cache.clear()\n        self._surface_cache.clear()\n        self._bg_cache.clear()\n\n    def get_scaled_image(self, image, size):\n        \"\"\"Cache scaled images to avoid repeated scaling\"\"\"\n        cache_key = (id(image), size)\n        if cache_key not in self._image_cache:\n            self._image_cache[cache_key] = pygame.transform.smoothscale(image, size)\n        return self._image_cache[cache_key]\n\n    def get_scaled_background(self, image, size):\n        \"\"\"Cache scaled backgrounds\"\"\"\n        cache_key = (id(image), size)\n        if cache_key not in self._bg_cache:\n            self._bg_cache[cache_key] = pygame.transform.smoothscale(image, size)\n        return self._bg_cache[cache_key]\n\n    # ---- Performance optimization methods\n    def update_performance_mode(self):\n        \"\"\"Monitor FPS and automatically enable performance optimizations when needed\"\"\"\n        current_time = time.time()\n\n        # Calculate current FPS\n        if hasattr(self, 'last_frame_time'):\n            frame_time = current_time - self.last_frame_time\n            if frame_time > 0:\n                fps = 1.0 / frame_time\n                self.fps_samples.append(fps)\n\n                # Keep only last 30 samples for rolling average\n                if len(self.fps_samples) > 30:\n                    self.fps_samples.pop(0)\n\n                avg_fps = sum(self.fps_samples) / len(self.fps_samples)\n\n                # Enable performance mode if FPS drops below threshold\n                if avg_fps < MIN_FPS_THRESHOLD and not self.performance_mode:\n                    self.performance_mode = True\n                    self.current_fps = PERFORMANCE_FPS\n\n                # Disable performance mode if FPS is stable above threshold\n                elif avg_fps > MIN_FPS_THRESHOLD + 10 and self.performance_mode:\n                    self.performance_mode = False\n                    self.current_fps = FPS\n\n        self.last_frame_time = current_time\n\n        # Enable additional optimizations for very small windows\n        window_area = self.window_rect.w * self.window_rect.h\n        small_window_threshold = 800 * 600  # Small window threshold\n\n        self.skip_expensive_effects = (\n            self.performance_mode or\n            window_area < small_window_threshold or\n            self.cell_size < MIN_CELL_SIZE_FOR_DETAILS\n        )\n\n    def should_skip_frame(self):\n        \"\"\"Determine if we should skip this frame for performance\"\"\"\n        if not self.performance_mode:\n            return False\n\n        self.frame_skip_counter += 1\n        # Skip every 2nd frame in performance mode\n        if self.frame_skip_counter >= 2:\n            self.frame_skip_counter = 0\n            return False\n        return True\n\n    def get_optimized_maze_surface(self):\n        \"\"\"Create a pre-rendered maze surface for better performance\"\"\"\n        if self._maze_surface is None or self._maze_surface_dirty:\n            # Create surface for the entire maze\n            maze_surface = pygame.Surface(self.maze_rect.size)\n\n            cell = self.cell_size\n\n            # Draw floor tiles\n            for r in range(MAZE_ROWS):\n                for c in range(MAZE_COLS):\n                    x = c * cell\n                    y = r * cell\n                    idx = self.floor_map[r][c]\n                    maze_surface.blit(self.scaled_floor_tiles[idx], (x, y))\n\n            # Draw walls\n            for r in range(MAZE_ROWS):\n                for c in range(MAZE_COLS):\n                    if self.maze[r][c].status == 0:\n                        x = c * cell\n                        y = r * cell\n                        maze_surface.blit(self.scaled_wall_tile, (x, y))\n\n            self._maze_surface = maze_surface\n            self._maze_surface_dirty = False\n\n        return self._maze_surface\n\n    def invalidate_maze_surface(self):\n        \"\"\"Mark maze surface as dirty when maze changes\"\"\"\n        self._maze_surface_dirty = True\n        self._ui_surface_dirty = True\n\n    def draw_optimized_ui(self, sidebar):\n        \"\"\"Draw UI elements with performance optimizations\"\"\"\n        if self._ui_surface is None or self._ui_surface_dirty:\n            # Pre-render UI elements that don't change often\n            scale_factor = min(self.window_rect.w / 1920, self.window_rect.h / 1080)\n            scale_factor = max(0.5, min(1.0, scale_factor))\n\n            ui_surface = pygame.Surface(sidebar.size, pygame.SRCALPHA)\n\n            # Draw sidebar background\n            draw_glass_card(ui_surface, pygame.Rect(0, 0, sidebar.w, sidebar.h),\n                          radius=22, bg=(18,24,18,190), border=(110,150,110), border_alpha=70)\n\n            self._ui_surface = ui_surface\n            self._ui_surface_dirty = False\n\n        return self._ui_surface\n\n    def draw_simplified_effects(self):\n        \"\"\"Draw simplified visual effects for performance mode\"\"\"\n        if self.skip_expensive_effects:\n            # Use simple rectangles instead of complex shadows and effects\n            return True\n        return False\n\n    def run(self):\n        while self.running:\n            # Use adaptive FPS based on performance mode\n            target_fps = self.current_fps if hasattr(self, 'current_fps') else FPS\n            dt = self.clock.tick(target_fps)/1000.0\n\n            self.handle_events()\n            self.update(dt)\n\n            if self.state==\"start\":\n                self.draw_start()\n            else:\n                self.draw_game()\n\n            pygame.display.flip()\n        pygame.quit()\n\nif __name__ == \"__main__\":\n    App().run()\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/View/__init__.py b/View/__init__.py
+--- a/View/__init__.py	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ b/View/__init__.py	(date 1759964478000)
+@@ -7,11 +7,11 @@
+ FULLSCREEN = False
+ RIGHT_PANEL_W = 360
+ FPS = 60
+-# Performance optimization settings
+-PERFORMANCE_MODE = False  # Automatically enabled when window is small
+-MIN_FPS_THRESHOLD = 30    # Switch to performance mode if FPS drops below this
+-PERFORMANCE_FPS = 30      # Reduced FPS in performance mode
+-MIN_CELL_SIZE_FOR_DETAILS = 12  # Don't draw detailed elements if cells are smaller
++# Cài đặt tối ưu hóa hiệu suất
++PERFORMANCE_MODE = False  # Tự động bật khi cửa sổ nhỏ
++MIN_FPS_THRESHOLD = 30    # Chuyển sang chế độ hiệu suất khi FPS giảm dưới mức này
++PERFORMANCE_FPS = 30      # FPS giảm trong chế độ hiệu suất
++MIN_CELL_SIZE_FOR_DETAILS = 12  # Không vẽ các thành phần chi tiết nếu ô nhỏ hơn
+ GENERATOR = "None" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
+ MODE = None  # Easy, Medium, Hard
+ MAZE_COLS, MAZE_ROWS = 25, 19
+@@ -20,7 +20,7 @@
+ ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+ IMG = lambda name: os.path.join(ASSETS, name)
+ 
+-# ---------- Utility & Theme ----------
++# ---------- Tiện ích & Giao diện ----------
+ def load_image(path, alpha=True):
+     try:
+         img = pygame.image.load(path)
+@@ -53,7 +53,7 @@
+     surface.blit(card, rect.topleft)
+ 
+ def draw_smooth_rect(surface, rect, color, radius=16, border=0, border_color=(0,0,0)):
+-    # Supersampling to smooth edges
++    # Siêu lấy mẫu để làm mịn các cạnh
+     scale = 2
+     temp = pygame.Surface((rect.w*scale, rect.h*scale), pygame.SRCALPHA)
+     pygame.draw.rect(temp, color, temp.get_rect(), border_radius=radius*scale)
+@@ -74,7 +74,7 @@
+ def calculate_button_size(image, target_width=None, target_height=None):
+     """Tính kích thước button giữ nguyên aspect ratio của hình ảnh gốc"""
+     if image is None:
+-        return (100, 40)  # Default size
++        return (100, 40)  # Kích thước mặc định
+ 
+     orig_w, orig_h = image.get_size()
+     aspect_ratio = orig_w / orig_h
+@@ -101,7 +101,7 @@
+         # Không có gì, dùng kích thước gốc
+         return (orig_w, orig_h)
+ 
+-# ---------- UI Controls ----------
++# ---------- Điều khiển giao diện ----------
+ class Button:
+     def __init__(self, rect, text, font, on_click=None, tooltip=None, theme='neutral', bg_image=None, keep_aspect=True):
+         self.rect = pygame.Rect(rect)
+@@ -181,7 +181,7 @@
+                 self.on_click()
+ 
+ class Dropdown:
+-    def __init__(self, rect, font, options, default_text="None", on_select=None):
++    def __init__(self, rect, font, options, default_text = "None", on_select = None):
+         self.rect = pygame.Rect(rect)
+         self.font = font
+         self.options = options[:]
+@@ -189,21 +189,21 @@
+         self.selected = None
+         self.default_text = default_text
+         self.on_select = on_select
+-        # Reduced debounce time for better responsiveness
++        # Giảm thời gian debounce để tăng độ phản hồi
+         self.last_click_time = 0
+-        self.click_debounce = 0.05  # Reduced from 0.1 to 0.05 seconds (50ms)
++        self.click_debounce = 0.025
+ 
+     def draw(self, surface):
+         bg = (20,28,20)
+         border = (36,60,36)
+ 
+-        # Use simplified drawing in performance mode to improve responsiveness
++        # Sử dụng vẽ đơn giản trong chế độ hiệu suất để cải thiện độ phản hồi
+         if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):
+-            # Simple rectangle for better performance
++            # Hình chữ nhật đơn giản để có hiệu suất tốt hơn
+             pygame.draw.rect(surface, bg, self.rect, border_radius=8)
+             pygame.draw.rect(surface, border, self.rect, 2, border_radius=8)
+         else:
+-            # Full quality drawing
++            # Vẽ chất lượng đầy đủ
+             draw_shadow(surface, self.rect, radius=14, offset=(0,6), alpha=100)
+             draw_smooth_rect(surface, self.rect, bg, radius=14, border=2, border_color=border)
+ 
+@@ -211,7 +211,7 @@
+         label = self.font.render(text, True, (240,240,240))
+         surface.blit(label, (self.rect.x+12, self.rect.y+(self.rect.h-label.get_height())//2))
+ 
+-        # caret
++        # mũi tên
+         pygame.draw.polygon(surface, (200,200,200),
+                             [(self.rect.right-22, self.rect.y+self.rect.h//2-4),
+                              (self.rect.right-12, self.rect.y+self.rect.h//2-4),
+@@ -221,7 +221,7 @@
+             opt_h = self.rect.h
+             panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))
+ 
+-            # Simplified panel drawing for better performance
++            # Vẽ panel đơn giản để có hiệu suất tốt hơn
+             if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):
+                 pygame.draw.rect(surface, (240,240,240), panel, border_radius=8)
+             else:
+@@ -236,12 +236,11 @@
+                 pygame.draw.line(surface, (230,230,230), (r.x, r.bottom-1), (r.right, r.bottom-1))
+ 
+     def handle_event(self, event):
+-        import time
+         current_time = time.time()
+ 
+-        # Simplified event handling - only use MOUSEBUTTONDOWN for immediate response
++        # Xử lý sự kiện đơn giản - chỉ sử dụng MOUSEBUTTONDOWN để phản hồi ngay lập tức
+         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+-            # Check debounce only for rapid successive clicks
++            # Kiểm tra debounce chỉ cho các click liên tiếp nhanh
+             if current_time - self.last_click_time < self.click_debounce:
+                 return
+ 
+@@ -250,7 +249,7 @@
+                 panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))
+ 
+                 if panel.collidepoint(event.pos):
+-                    # Option selection
++                    # Chọn tùy chọn
+                     index = (event.pos[1]-panel.y)//opt_h
+                     if 0 <= index < len(self.options):
+                         self.selected = self.options[index]
+@@ -259,11 +258,11 @@
+                     self.open = False
+                     self.last_click_time = current_time
+                 else:
+-                    # Click outside - close dropdown
++                    # Click bên ngoài - đóng dropdown
+                     self.open = False
+                     self.last_click_time = current_time
+             else:
+-                # Dropdown is closed - check if clicking on main rect
++                # Dropdown đã đóng - kiểm tra xem có click vào rect chính không
+                 if self.rect.collidepoint(event.pos):
+                     self.open = True
+                     self.last_click_time = current_time
+@@ -450,6 +449,7 @@
+ # ---------- App ----------
+ class App:
+     def __init__(self):
++        self.selected_generation_algo = None
+         self.cell_size = None
+         self.maze_rect = None
+         pygame.init()
+@@ -460,13 +460,13 @@
+         self.window_rect = self.screen.get_rect()
+         self.running = True
+ 
+-        # Performance optimization - Cache system
++        # Tối ưu hóa hiệu suất - Hệ thống cache
+         self._image_cache = {}
+         self._surface_cache = {}
+         self._last_cell_size = None
+         self._bg_cache = {}
+ 
+-        # Performance monitoring and optimization
++        # Giám sát và tối ưu hóa hiệu suất
+         self.fps_samples = []
+         self.current_fps = FPS
+         self.performance_mode = PERFORMANCE_MODE
+@@ -475,20 +475,20 @@
+         self.last_draw_time = 0
+         self.skip_expensive_effects = False
+ 
+-        # Precomputed maze surface for small sizes
++        # Bề mặt mê cung được tính toán trước cho kích thước nhỏ
+         self._maze_surface = None
+         self._maze_surface_dirty = True
+         self._ui_surface = None
+         self._ui_surface_dirty = True
+ 
+-        # assets
++        # tài nguyên
+         self.bg_jungle = load_image(IMG("bg_jungle.png"))
+         self.bg_start = load_image(IMG("bg_start.png"))
+         self.tile_wall = load_image(IMG("tile_wall.png"))
+         self.monkey_img = load_image(IMG("monkey.png"))
+         self.banana_img = load_image(IMG("banana_rainbow.png"))
+ 
+-        # button assets
++        # tài nguyên nút bấm
+         self.btn_assets = {
+             'start': load_image(IMG("button/start_btn.png")),
+             'restart': load_image(IMG("button/restart_btn.png")),
+@@ -502,23 +502,23 @@
+             'win_restart': load_image(IMG("button/win_restart_btn.png"))
+         }
+ 
+-        # floor tiles
++        # ô nền
+         self.floor_tiles = []
+         tiles_dir = os.path.join(ASSETS, "tiles")
+         for name in sorted(os.listdir(tiles_dir)):
+             if name.lower().endswith(".png"):
+                 self.floor_tiles.append(load_image(os.path.join(tiles_dir, name)))
+ 
+-        # fonts
++        # phông chữ
+         self.font_title = try_load_font(64)
+         self.font_ui = try_load_font(26)
+         self.font_small = try_load_font(20)
+ 
+-        # state
++        # trạng thái
+         self.state = "start"
+         self.paused = False
+         self.auto_on = False
+-        self.selected_algo = None
++        self.selected_solving_algo = None
+         self.steps = 0
+         self.timer = 0.0
+         self.start_time = None
+@@ -533,7 +533,7 @@
+         self.is_fullscreen = FULLSCREEN  # Ban đầu là full màn hình
+         self.is_minimized = False  # Trạng thái thu nhỏ
+ 
+-        # Window dragging state
++        # Trạng thái kéo cửa sổ
+         self.dragging = False
+         self.drag_offset = (0, 0)
+ 
+@@ -574,11 +574,11 @@
+             keep_aspect=False
+         )
+ 
+-        # start screen - tăng kích thước nút start
++        # màn hình bắt đầu - tăng kích thước nút start
+         start_size = calculate_button_size(self.btn_assets['start'], target_width=240)  # Tăng từ 180 lên 240
+         self.btn_start = Button((0, 0, start_size[0], start_size[1]), "", self.font_ui, self.goto_game, theme='green', bg_image=self.btn_assets['start'], keep_aspect=False)
+ 
+-        # game UI
++        # giao diện game
+         self.compute_layout()
+ 
+         # Tính toán vị trí sidebar và margin
+@@ -616,11 +616,11 @@
+         cur_y += row2_height + row_spacing
+ 
+         # Dòng 3: Dropdown (toàn bộ chiều rộng)
+-        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="Select Solving Algorithm", on_select=self.set_algo)
++        self.solving_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="Select Solving Algorithm", on_select = self.set_algo)
+         cur_y += 40 + row_spacing
+ 
+         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
+-        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Division"], default_text="Select Generation Algorithm", on_select=self.set_generation_algo)
++        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["DFS", "Kruskal", "Binary_Tree", "Wilson", "Recursive_Division"], default_text="Select Generation Algorithm", on_select = self.set_generation_algo)
+         cur_y += 40 + row_spacing
+ 
+         # Dòng 3.6: Nút Generate
+@@ -633,13 +633,13 @@
+         self.btn_history = Button((spx, cur_y, half_btn_w, row4_height), "", self.font_ui, self.open_history, theme='purple', bg_image=self.btn_assets['history'], keep_aspect=False)
+         self.btn_back = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height), "", self.font_ui, self.goto_start, theme='red', bg_image=self.btn_assets['back'], keep_aspect=False)
+ 
+-        # maze
++        # mê cung
+         self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
+         self.maze = self.MazeGenerated
+         self.player = [1,1]  # Khởi tạo từ (1,1) thay vì (0,0)
+         self.prepare_sprites()
+ 
+-        # prebuild random floor map for repeatability
++        # xây dựng trước bản đồ nền ngẫu nhiên để có tính lặp lại
+         random.seed(42)
+         self.floor_map = [[random.randrange(len(self.floor_tiles)) for _ in range(MAZE_COLS)] for _ in range(MAZE_ROWS)]
+ 
+@@ -648,7 +648,7 @@
+ 
+     def prepare_sprites(self):
+         cell = self.cell_size
+-        # Clear cache if cell size changed
++        # Xóa cache nếu kích thước ô thay đổi
+         if self._last_cell_size != cell:
+             self.clear_size_dependent_cache()
+             self._last_cell_size = cell
+@@ -657,15 +657,15 @@
+             w = h = int(cell*ratio)
+             return self.get_scaled_image(img, (w,h))
+ 
+-        # Pre-scale and cache all floor tiles for current cell size
++        # Chia tỷ lệ trước và cache tất cả ô nền cho kích thước ô hiện tại
+         self.scaled_floor_tiles = []
+         for tile in self.floor_tiles:
+             self.scaled_floor_tiles.append(self.get_scaled_image(tile, (cell, cell)))
+ 
+-        # Pre-scale wall tile
++        # Chia tỷ lệ trước ô tường
+         self.scaled_wall_tile = self.get_scaled_image(self.tile_wall, (cell, cell))
+ 
+-        # idle frames
++        # khung hình chờ
+         stand_dir = os.path.join(ASSETS, "monkey_stand")
+         frames = []
+         if os.path.exists(stand_dir):
+@@ -675,7 +675,7 @@
+         self.monkey_idle = MonkeyIdle(frames, scale_to_cell(self.monkey_img), self.cell_size)
+         self.banana = FloatingBanana(scale_to_cell(self.banana_img, 0.85), self.cell_size)
+ 
+-    # ---- Window controls
++    # ---- Điều khiển cửa sổ
+     def update_window_controls(self):
+         """Cập nhật vị trí window controls khi cửa sổ thay đổi kích thước"""
+         btn_size = 48  # Tăng kích thước nút
+@@ -747,7 +747,7 @@
+         cur_y += row2_height + row_spacing
+ 
+         # Dòng 3: Dropdown
+-        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
++        self.solving_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
+         cur_y += 40 + row_spacing
+ 
+         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
+@@ -891,7 +891,7 @@
+ 
+     # ---- State transitions
+     def goto_start(self):
+-        self.save_run(label="Manual" if not self.auto_on else f"Auto ({self.selected_algo or 'None'})")
++        self.save_run(label="Manual" if not self.auto_on else f"Auto ({self.selected_solving_algo or 'None'})")
+         self.state = "start"; self.modal_history.visible=False
+ 
+     def goto_game(self):
+@@ -900,7 +900,7 @@
+     def reset_run(self):
+         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
+         self.paused = False; self.auto_on=False
+-        self.player= [1,1]  # Bắt đầu từ (1,1) thay vì (0,0) vì viền ngoài là tường
++        self.player= [1,1]
+         self.maze = self.MazeGenerated
+         self.prepare_sprites()
+         self.modal_victory.hide()
+@@ -908,7 +908,7 @@
+     def restart_level(self): self.reset_run()
+     def toggle_play(self): self.paused = not self.paused
+     def toggle_auto(self): self.auto_on = not self.auto_on
+-    def set_algo(self, name): self.selected_algo = name
++    def set_algo(self, name): self.selected_solving_algo = name
+     def set_generation_algo(self, name):
+         """Thiết lập thuật toán sinh mê cung được chọn"""
+         self.selected_generation_algo = name
+@@ -947,7 +947,7 @@
+         duration = self.timer; steps=self.steps
+         if duration<=0 and steps<=0: return
+         rank = "S" if duration<30 and steps<50 else ("A" if duration<60 else ("B" if duration<120 else "C"))
+-        mode = label if "Auto" in label else ("Manual" if not self.auto_on else f"Auto ({self.selected_algo or 'None'})")
++        mode = label if "Auto" in label else ("Manual" if not self.auto_on else f"Auto ({self.selected_solving_algo or 'None'})")
+         self.history.append({"time_str": f"{int(duration//60):02d}:{int(duration%60):02d}", "steps": steps, "rank": rank, "mode": mode})
+ 
+     # ---- Input
+@@ -996,7 +996,7 @@
+                     self.modal_victory.handle_event(event)
+                 else:
+                     for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)
+-                    self.dropdown.handle_event(event)
++                    self.solving_dropdown.handle_event(event)
+                     self.maze_gen_dropdown.handle_event(event)
+                     if event.type == pygame.KEYDOWN and not self.paused:
+                         if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)
+@@ -1123,7 +1123,7 @@
+         cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing
+ 
+         # Dòng 3: Dropdown (full width)
+-        self.dropdown.rect.topleft = (spx, cur_y)
++        self.solving_dropdown.rect.topleft = (spx, cur_y)
+         cur_y += 36 + spacing
+ 
+         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
+@@ -1141,11 +1141,11 @@
+             b.draw(self.screen)
+         self.btn_generate.draw(self.screen)
+ 
+-        # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác
+-        self.dropdown.draw(self.screen)
++        # Vẽ solving_dropdown cuối cùng để chúng hiển thị trên các element khác
++        self.solving_dropdown.draw(self.screen)
+         self.maze_gen_dropdown.draw(self.screen)
+ 
+-        # maze frame card - simplified for performance mode
++        # mê cung frame card - simplified for performance mode
+         if self.skip_expensive_effects:
+             pygame.draw.rect(self.screen, (12,22,12), self.maze_rect, border_radius=8)
+         else:
+@@ -1357,3 +1357,4 @@
+ 
+ if __name__ == "__main__":
+     App().run()
++
+Index: Model/__init__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import random\nimport heapq\nimport time\nfrom collections import deque\nfrom typing import List, Tuple, Optional, Dict\nfrom Model.node_cell import Node_Cell\n\n# Generation Algorithms: DFS, Kruskal, Binary Tree, Wilson, Recursive Division\n# Solving Algorithms: BFS, DFS, UCS, A*, Bidirectional Search\n# Các trạng thái của Node_Cell:\n# 0: Wall\n# 1: Path\n# 2: Start\n# 3: End\n# 4: Path Found\n# 5: Moved Path\n\nclass GenerationModel:\n    def __init__(self, maze_width, maze_height, Algorithm):\n        self.maze_width = maze_width\n        self.maze_height = maze_height\n        self.Algorithm = Algorithm\n        self.Maze = [[Node_Cell(x, y, 0, False, float('inf'), float('inf')) for x in range(maze_width)] for y in range(maze_height)]\n        self.Maze_Backup = self.Maze\n        # Thuộc tính bổ sung cho quá trình sinh mê cung\n        self.start_pos: Optional[Tuple[int, int]] = (1, 1) # Mặc định vị trí bắt đầu\n        self.end_pos: Optional[Tuple[int, int]] = (maze_width - 2, maze_height - 2) # Mặc định vị trí kết thúc\n        self.generation_complete = False # Cờ để kiểm tra quá trình sinh mê cung đã hoàn thành\n\n    def __get_neighbors(self, x: int, y: int ) -> List[Tuple[int, int]]:\n        neighbors = []\n        directions = [(0, 2), (0, -2), (2, 0), (-2, 0)]\n\n        for dx, dy in directions:\n            nx, ny = x + dx, y + dy\n            if 1 <= nx < self.maze_width - 1 and 1 <= ny < self.maze_height - 1:\n                neighbors.append((nx, ny))\n\n        return neighbors\n\n    def DFS(self):\n        \"\"\"Thuật toán Depth-First Search để sinh mê cung\"\"\"\n        stack = [(1, 1)] # Bắt đầu từ ô (1, 1)\n        visited = set()\n        visited.add((1, 1))\n        self.Maze[1][1].status = 1  # Đánh dấu là path\n\n        while stack:\n            current_x, current_y = stack[-1]  # Peek top of stack\n            neighbors = self.__get_neighbors(current_x, current_y)\n\n            # Lọc ra những neighbor chưa được thăm (status = 0)\n            unvisited_neighbors = []\n            for nx, ny in neighbors:\n                if (nx, ny) not in visited and self.Maze[ny][nx].status == 0:\n                    unvisited_neighbors.append((nx, ny))\n\n            if unvisited_neighbors:\n                # Chọn ngẫu nhiên một neighbor chưa thăm\n                next_x, next_y = random.choice(unvisited_neighbors)\n\n                # Đánh dấu đã thăm\n                visited.add((next_x, next_y))\n\n                # Phá tường giữa current và next\n                wall_x = (current_x + next_x) // 2\n                wall_y = (current_y + next_y) // 2\n                self.Maze[wall_y][wall_x].status = 1  # Phá tường\n                self.Maze[next_y][next_x].status = 1  # Đánh dấu ô đích là path\n\n                # Thêm vào stack\n                stack.append((next_x, next_y))\n            else:\n                # Backtrack\n                stack.pop()\n\n    def Kruskal(self):\n        \"\"\"Thuật toán Kruskal để sinh mê cung\"\"\"\n        # Tạo danh sách tất cả các tường có thể phá\n        walls = []\n\n        # Khởi tạo các ô lẻ là path\n        for y in range(1, self.maze_height, 2):\n            for x in range(1, self.maze_width, 2):\n                self.Maze[y][x].status = 1  # Path\n\n                # Thêm tường ngang\n                if x + 2 < self.maze_width:\n                    walls.append((x, y, x + 2, y))\n\n                # Thêm tường dọc\n                if y + 2 < self.maze_height:\n                    walls.append((x, y, x, y + 2))\n\n        random.shuffle(walls)\n\n        # Union-Find để theo dõi các thành phần liên thông\n        parent = {}\n\n        def find(pos):\n            if pos not in parent:\n                parent[pos] = pos\n            if parent[pos] != pos:\n                parent[pos] = find(parent[pos])\n            return parent[pos]\n\n        def union(pos1, pos2):\n            p1, p2 = find(pos1), find(pos2)\n            if p1 != p2:\n                parent[p1] = p2\n                return True\n            return False\n\n        # Phá tường nếu hai ô chưa kết nối\n        for x1, y1, x2, y2 in walls:\n            if union((x1, y1), (x2, y2)):\n                wall_x = (x1 + x2) // 2\n                wall_y = (y1 + y2) // 2\n                self.Maze[wall_y][wall_x].status = 1  # Path\n\n    def Binary_Tree(self):\n        \"\"\"Thuật toán Binary Tree để sinh mê cung\"\"\"\n        for y in range(1, self.maze_height, 2):\n            for x in range(1, self.maze_width, 2):\n                self.Maze[y][x].status = 1  # Path\n\n                # Chọn ngẫu nhiên hướng: lên hoặc trái\n                directions = []\n                if y > 1:  # Có thể đi lên\n                    directions.append(\"up\")\n                if x > 1:  # Có thể đi trái\n                    directions.append(\"left\")\n\n                if directions:\n                    direction = random.choice(directions)\n                    if direction == \"up\":\n                        self.Maze[y - 1][x].status = 1  # Path\n                    else:  # left\n                        self.Maze[y][x - 1].status = 1  # Path\n\n    def Wilson(self):\n        \"\"\"Thuật toán Wilson để sinh mê cung\"\"\"\n        # Tạo danh sách tất cả các ô lẻ\n        cells = [(x, y) for y in range(1, self.maze_height, 2)\n                 for x in range(1, self.maze_width, 2)]\n\n        # Chọn ô đầu tiên làm điểm bắt đầu\n        start = random.choice(cells)\n        self.Maze[start[1]][start[0]].status = 1  # Path\n        remaining = [cell for cell in cells if cell != start]\n\n        while remaining:\n            # Chọn ô ngẫu nhiên chưa trong mê cung\n            current = random.choice(remaining)\n            path = [current]\n\n            # Random walk cho đến khi gặp ô đã trong mê cung\n            while self.Maze[current[1]][current[0]].status != 1:\n                neighbors = self.__get_neighbors(current[0], current[1])\n                valid_neighbors = [(x, y) for x, y in neighbors\n                                   if 1 <= x < self.maze_width - 1 and 1 <= y < self.maze_height - 1]\n\n                if valid_neighbors:\n                    next_cell = random.choice(valid_neighbors)\n\n                    # Xóa loop nếu có\n                    if next_cell in path:\n                        path = path[:path.index(next_cell) + 1]\n                    else:\n                        path.append(next_cell)\n\n                    current = next_cell\n\n            # Thêm đường đi vào mê cung\n            for i in range(len(path) - 1):\n                x1, y1 = path[i]\n                x2, y2 = path[i + 1]\n\n                self.Maze[y1][x1].status = 1  # Path\n\n                # Phá tường giữa hai ô\n                wall_x = (x1 + x2) // 2\n                wall_y = (y1 + y2) // 2\n                self.Maze[wall_y][wall_x].status = 1  # Path\n\n            # Cập nhật danh sách ô còn lại\n            remaining = [cell for cell in remaining\n                if self.Maze[cell[1]][cell[0]].status != 1]\n\n    def Recursive_Division(self):\n        \"\"\"Thuật toán Recursive Division để sinh mê cung\"\"\"\n        # Bắt đầu với toàn bộ khu vực là đường đi\n        for y in range(self.maze_height):\n            for x in range(self.maze_width):\n                if y == 0 or y == self.maze_height - 1 or x == 0 or x == self.maze_width - 1:\n                    self.Maze[y][x].status = 0  # Wall (biên)\n                else:\n                    self.Maze[y][x].status = 1  # Path (bên trong)\n\n        # Bắt đầu chia đệ quy từ khu vực bên trong\n        self.__divide(1, 1, self.maze_width - 2, self.maze_height - 2)\n\n    def __divide(self, x: int, y: int, width: int, height: int):\n        \"\"\"Đệ quy chia khu vực thành các phần nhỏ hơn\"\"\"\n        # Dừng nếu khu vực quá nhỏ để chia\n        if width < 2 or height < 2:\n            return\n\n        # Chọn hướng chia dựa trên kích thước\n        if width > height:\n            horizontal = False  # Chia dọc khi rộng hơn cao\n        elif height > width:\n            horizontal = True   # Chia ngang khi cao hơn rộng\n        else:\n            horizontal = random.choice([True, False])  # Ngẫu nhiên khi bằng nhau\n\n        if horizontal and height >= 2:\n            # Chia ngang - tạo tường ngang\n            wall_y = y + random.randint(1, height - 1)\n\n            # Tạo tường ngang\n            for wx in range(x, x + width + 1):\n                if wx < self.maze_width:\n                    self.Maze[wall_y][wx].status = 0  # Wall\n\n            # Tạo một lỗ ngẫu nhiên trong tường\n            hole_x = x + random.randint(0, width - 1)\n            self.Maze[wall_y][hole_x].status = 1  # Path\n\n            # Đệ quy chia hai phần\n            self.__divide(x, y, width, wall_y - y)\n            self.__divide(x, wall_y + 1, width, y + height - wall_y - 1)\n\n        elif not horizontal and width >= 2:\n            # Chia dọc - tạo tường dọc\n            wall_x = x + random.randint(1, width - 1)\n\n            # Tạo tường dọc\n            for wy in range(y, y + height + 1):\n                if wy < self.maze_height:\n                    self.Maze[wy][wall_x].status = 0  # Wall\n\n            # Tạo một lỗ ngẫu nhiên trong tường\n            hole_y = y + random.randint(0, height - 1)\n            self.Maze[hole_y][wall_x].status = 1  # Path\n\n            # Đệ quy chia hai phần\n            self.__divide(x, y, wall_x - x, height)\n            self.__divide(wall_x + 1, y, x + width - wall_x - 1, height)\n\n\n    def __set_start_end(self):\n        \"\"\"Đặt điểm bắt đầu và kết thúc\"\"\"\n        # Tìm ô đường đi đầu tiên làm điểm bắt đầu\n        for y in range(self.maze_height):\n            for x in range(self.maze_width):\n                if self.Maze[y][x].status == 1:  # Path\n                    self.start_pos = (x, y)\n                    self.Maze[y][x].status = 2  # Start\n                    break\n            if self.start_pos:\n                break\n\n        # Tìm ô đường đi cuối cùng làm điểm kết thúc\n        for y in range(self.maze_height-1, -1, -1):\n            for x in range(self.maze_width-1, -1, -1):\n                if self.Maze[y][x].status == 1:  # Path\n                    self.end_pos = (x, y)\n                    self.Maze[y][x].status = 3  # End\n                    break\n            if self.end_pos:\n                break\n    def init_maze_reset(self):\n        self.Maze_Backup = self.Maze\n\n    def reset_maze(self):\n        self.Maze = self.Maze_Backup\n        self.generation_complete = False\n        self.start_pos = None\n        self.end_pos = None\n\n    def generate_maze(self):\n        \"\"\"Sinh mê cung theo thuật toán đã chọn\"\"\"\n        if self.Algorithm == \"DFS\":\n            self.DFS()\n            self.init_maze_reset()\n        elif self.Algorithm == \"Kruskal\":\n            self.Kruskal()\n            self.init_maze_reset()\n        elif self.Algorithm == \"Binary_Tree\":\n            self.Binary_Tree()\n            self.init_maze_reset()\n        elif self.Algorithm == \"Wilson\":\n            self.Wilson()\n            self.init_maze_reset()\n        elif self.Algorithm == \"Recursive_Division\":\n            self.Recursive_Division()\n            self.init_maze_reset()\n\n        self.__set_start_end()\n        self.generation_complete = True\n        return self.Maze\n\nclass SolvingModel:\n    def __init__(self, maze_grid: List[List[Node_Cell]], maze_width: int, maze_height: int):\n        # Dữ liệu mê cung\n        self.maze_grid = maze_grid\n        self.maze_width = maze_width\n        self.maze_height = maze_height\n\n        # Thuật toán và kết quả\n        self.algorithm = None\n        self.solution_path: List[Tuple[int, int]] = []\n        self.visited_cells: List[Tuple[int, int]] = []\n\n        # Trạng thái giải\n        self.solving_complete = False\n        self.solution_found = False\n\n        # Vị trí start/end\n        self.start_pos: Optional[Tuple[int, int]] = (1, 1) # Mặc định vị trí bắt đầu\n        self.end_pos: Optional[Tuple[int, int]] = (maze_width - 2, maze_height - 2) # Mặc định vị trí kết thúc\n\n        # Metrics\n        self.steps_taken = 0\n        self.path_length = 0\n        self.nodes_expanded = 0\n        self.solving_time = 0.0\n\n    def reset_solving_state(self):\n        \"\"\"Reset trạng thái để giải lại\"\"\"\n        self.solution_path.clear()\n        self.visited_cells.clear()\n        self.solving_complete = False\n        self.solution_found = False\n        self.steps_taken = 0\n        self.path_length = 0\n        self.nodes_expanded = 0\n        self.solving_time = 0.0\n\n        # Reset visual state\n        for y in range(self.maze_height):\n            for x in range(self.maze_width):\n                if self.maze_grid[y][x].status in [4, 5]:  # Path Found, Moved Path\n                    if (x, y) == self.start_pos:\n                        self.maze_grid[y][x].status = 2  # Start\n                    elif (x, y) == self.end_pos:\n                        self.maze_grid[y][x].status = 3  # End\n                    else:\n                        self.maze_grid[y][x].status = 1  # Path\n\n    def get_neighbors(self, x: int, y: int) -> List[Tuple[int, int]]:\n        \"\"\"Lấy các ô láng giềng hợp lệ (không phải tường)\"\"\"\n        neighbors = []\n        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]\n\n        for dx, dy in directions:\n            nx, ny = x + dx, y + dy\n            if (0 <= nx < self.maze_width and 0 <= ny < self.maze_height and self.maze_grid[ny][nx].status != 0):  # Không phải tường\n                neighbors.append((nx, ny))\n\n        return neighbors\n\n    def heuristic(self, pos1: Tuple[int, int], pos2: Tuple[int, int]) -> float:\n        \"\"\"Hàm heuristic cho A* (Manhattan distance)\"\"\"\n        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])\n\n    def reconstruct_path(self, came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]]) -> List[Tuple[int, int]]:\n        \"\"\"Tái tạo đường đi từ came_from dictionary\"\"\"\n        path = []\n        current = self.end_pos\n\n        while current is not None:\n            path.append(current)\n            current = came_from.get(current)\n\n        path.reverse()\n        return path\n\n    def BFS(self) -> bool:\n        \"\"\"Breadth-First Search - Tìm đường đi ngắn nhất\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        queue = deque([self.start_pos])\n        visited = {self.start_pos}\n        came_from = {self.start_pos: None}\n\n        while queue:\n            current = queue.popleft()\n            self.nodes_expanded += 1\n\n            if current == self.end_pos:\n                self.solution_path = self.reconstruct_path(came_from)\n                self.path_length = len(self.solution_path)\n                return True\n\n            for neighbor in self.get_neighbors(current[0], current[1]):\n                if neighbor not in visited:\n                    visited.add(neighbor)\n                    came_from[neighbor] = current\n                    queue.append(neighbor)\n\n                    # Đánh dấu ô đã thăm\n                    if neighbor != self.end_pos:\n                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                    self.visited_cells.append(neighbor)\n\n        return False\n\n    def DFS(self) -> bool:\n        \"\"\"Depth-First Search - Tìm một đường đi (không nhất thiết ngắn nhất)\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        stack = [self.start_pos]\n        visited = {self.start_pos}\n        came_from = {self.start_pos: None}\n\n        while stack:\n            current = stack.pop()\n            self.nodes_expanded += 1\n\n            if current == self.end_pos:\n                self.solution_path = self.reconstruct_path(came_from)\n                self.path_length = len(self.solution_path)\n                return True\n\n            for neighbor in self.get_neighbors(current[0], current[1]):\n                if neighbor not in visited:\n                    visited.add(neighbor)\n                    came_from[neighbor] = current\n                    stack.append(neighbor)\n\n                    # Đánh dấu ô đã thăm\n                    if neighbor != self.end_pos:\n                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                    self.visited_cells.append(neighbor)\n\n        return False\n\n    def UCS(self) -> bool:\n        \"\"\"Uniform Cost Search - Tìm đường đi với chi phí thấp nhất\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        # Priority queue: (cost, position)\n        heap = [(0, self.start_pos)]\n        visited = set()\n        came_from = {self.start_pos: None}\n        cost_so_far = {self.start_pos: 0}\n\n        while heap:\n            current_cost, current = heapq.heappop(heap)\n\n            if current in visited:\n                continue\n\n            visited.add(current)\n            self.nodes_expanded += 1\n\n            if current == self.end_pos:\n                self.solution_path = self.reconstruct_path(came_from)\n                self.path_length = len(self.solution_path)\n                return True\n\n            for neighbor in self.get_neighbors(current[0], current[1]):\n                new_cost = current_cost + 1  # Giả sử mỗi bước có cost = 1\n\n                if neighbor not in visited and (neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]):\n                    cost_so_far[neighbor] = new_cost\n                    came_from[neighbor] = current\n                    heapq.heappush(heap, (new_cost, neighbor))\n\n                    # Đánh dấu ô đã thăm\n                    if neighbor != self.end_pos:\n                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                    self.visited_cells.append(neighbor)\n\n        return False\n\n    def A_star(self) -> bool:\n        \"\"\"A* Search - Tìm đường đi tối ưu với heuristic\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        # Priority queue: (f_score, g_score, position)\n        heap = [(0, 0, self.start_pos)]\n        visited = set()\n        came_from = {self.start_pos: None}\n        g_score = {self.start_pos: 0}\n\n        while heap:\n            f_score, g_score_current, current = heapq.heappop(heap)\n\n            if current in visited:\n                continue\n\n            visited.add(current)\n            self.nodes_expanded += 1\n\n            if current == self.end_pos:\n                self.solution_path = self.reconstruct_path(came_from)\n                self.path_length = len(self.solution_path)\n                return True\n\n            for neighbor in self.get_neighbors(current[0], current[1]):\n                tentative_g_score = g_score_current + 1\n\n                if neighbor not in visited and (neighbor not in g_score or tentative_g_score < g_score[neighbor]):\n                    g_score[neighbor] = tentative_g_score\n                    f_score = tentative_g_score + self.heuristic(neighbor, self.end_pos)\n                    came_from[neighbor] = current\n                    heapq.heappush(heap, (f_score, tentative_g_score, neighbor))\n\n                    # Đánh dấu ô đã thăm\n                    if neighbor != self.end_pos:\n                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                    self.visited_cells.append(neighbor)\n\n        return False\n\n    def Bidirectional_Search(self) -> bool:\n        \"\"\"Bidirectional Search - Tìm kiếm từ cả hai đầu\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        # Khởi tạo cho tìm kiếm từ start\n        queue_start = deque([self.start_pos])\n        visited_start = {self.start_pos}\n        came_from_start = {self.start_pos: None}\n\n        # Khởi tạo cho tìm kiếm từ end\n        queue_end = deque([self.end_pos])\n        visited_end = {self.end_pos}\n        came_from_end = {self.end_pos: None}\n\n        while queue_start or queue_end:\n            # Tìm kiếm từ start\n            if queue_start:\n                current_start = queue_start.popleft()\n                self.nodes_expanded += 1\n\n                # Kiểm tra giao điểm\n                if current_start in visited_end:\n                    # Tái tạo đường đi\n                    path_start = []\n                    node = current_start\n                    while node is not None:\n                        path_start.append(node)\n                        node = came_from_start.get(node)\n                    path_start.reverse()\n\n                    path_end = []\n                    node = came_from_end[current_start]\n                    while node is not None:\n                        path_end.append(node)\n                        node = came_from_end.get(node)\n\n                    self.solution_path = path_start + path_end\n                    self.path_length = len(self.solution_path)\n                    return True\n\n                for neighbor in self.get_neighbors(current_start[0], current_start[1]):\n                    if neighbor not in visited_start:\n                        visited_start.add(neighbor)\n                        came_from_start[neighbor] = current_start\n                        queue_start.append(neighbor)\n\n                        if neighbor not in [self.start_pos, self.end_pos]:\n                            self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                        self.visited_cells.append(neighbor)\n\n            # Tìm kiếm từ end\n            if queue_end:\n                current_end = queue_end.popleft()\n                self.nodes_expanded += 1\n\n                # Kiểm tra giao điểm\n                if current_end in visited_start:\n                    # Tái tạo đường đi\n                    path_start = []\n                    node = current_end\n                    while node is not None:\n                        path_start.append(node)\n                        node = came_from_start.get(node)\n                    path_start.reverse()\n\n                    path_end = []\n                    node = came_from_end[current_end]\n                    while node is not None:\n                        path_end.append(node)\n                        node = came_from_end.get(node)\n\n                    self.solution_path = path_start + path_end\n                    self.path_length = len(self.solution_path)\n                    return True\n\n                for neighbor in self.get_neighbors(current_end[0], current_end[1]):\n                    if neighbor not in visited_end:\n                        visited_end.add(neighbor)\n                        came_from_end[neighbor] = current_end\n                        queue_end.append(neighbor)\n\n                        if neighbor not in [self.start_pos, self.end_pos]:\n                            self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path\n\n                        self.visited_cells.append(neighbor)\n\n        return False\n\n    def solve_maze(self, algorithm: str) -> bool:\n        \"\"\"Giải mê cung với thuật toán được chọn\"\"\"\n        if not self.start_pos or not self.end_pos:\n            return False\n\n        self.algorithm = algorithm\n        self.reset_solving_state()\n\n        start_time = time.time()\n\n        if algorithm == \"BFS\":\n            self.solution_found = self.BFS()\n        elif algorithm == \"DFS\":\n            self.solution_found = self.DFS()\n        elif algorithm == \"UCS\":\n            self.solution_found = self.UCS()\n        elif algorithm == \"A*\":\n            self.solution_found = self.A_star()\n        elif algorithm == \"Bidirectional\":\n            self.solution_found = self.Bidirectional_Search()\n        else:\n            raise ValueError(f\"Unknown algorithm: {algorithm}\")\n\n        self.solving_time = time.time() - start_time\n        self.solving_complete = True\n\n        # Đánh dấu đường đi tìm được\n        if self.solution_found:\n            for pos in self.solution_path:\n                if pos not in [self.start_pos, self.end_pos]:\n                    self.maze_grid[pos[1]][pos[0]].status = 4  # Path Found\n\n        return self.solution_found
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Model/__init__.py b/Model/__init__.py
+--- a/Model/__init__.py	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ b/Model/__init__.py	(date 1759955809000)
+@@ -190,63 +190,70 @@
+     def Recursive_Division(self):
+         """Thuật toán Recursive Division để sinh mê cung"""
+         # Bắt đầu với toàn bộ khu vực là đường đi
+-        for y in range(self.maze_height):
+-            for x in range(self.maze_width):
+-                if y == 0 or y == self.maze_height - 1 or x == 0 or x == self.maze_width - 1:
+-                    self.Maze[y][x].status = 0  # Wall (biên)
+-                else:
+-                    self.Maze[y][x].status = 1  # Path (bên trong)
++        for y in range(1, self.maze_height - 1):
++            for x in range(1, self.maze_width - 1):
++                self.Maze[y][x].status = 1  # Đường đi
+ 
+-        # Bắt đầu chia đệ quy từ khu vực bên trong
+-        self.__divide(1, 1, self.maze_width - 2, self.maze_height - 2)
+-
+-    def __divide(self, x: int, y: int, width: int, height: int):
+-        """Đệ quy chia khu vực thành các phần nhỏ hơn"""
+-        # Dừng nếu khu vực quá nhỏ để chia
+-        if width < 2 or height < 2:
+-            return
++        def __divide(x_left: int, y_left: int, x_right: int, y_right: int):
++            """Đệ quy chia khu vực thành các phần nhỏ hơn"""
++            # Dừng nếu khu vực quá nhỏ để chia
++            width = x_right - x_left
++            height = y_right - y_left
++            if width < 2 or height < 2:
++                return
+ 
+-        # Chọn hướng chia dựa trên kích thước
+-        if width > height:
+-            horizontal = False  # Chia dọc khi rộng hơn cao
+-        elif height > width:
+-            horizontal = True   # Chia ngang khi cao hơn rộng
+-        else:
+-            horizontal = random.choice([True, False])  # Ngẫu nhiên khi bằng nhau
++            # Chọn hướng chia dựa trên kích thước
++            if width > height:
++                horizontal = False  # Chia dọc khi rộng hơn cao
++            elif height > width:
++                horizontal = True  # Chia ngang khi cao hơn rộng
++            else:
++                horizontal = random.choice([True, False])  # Ngẫu nhiên khi bằng nhau
+ 
+-        if horizontal and height >= 2:
+-            # Chia ngang - tạo tường ngang
+-            wall_y = y + random.randint(1, height - 1)
++            if horizontal and height >= 2:
++                # Chia ngang - tạo tường ngang
++                wall_y = random_even(y_left + 1, y_right - 1)
+ 
+-            # Tạo tường ngang
+-            for wx in range(x, x + width + 1):
+-                if wx < self.maze_width:
+-                    self.Maze[wall_y][wx].status = 0  # Wall
++                # Tạo tường ngang
++                for wall in range(x_left, x_right + 1):
++                    self.Maze[wall_y][wall].status = 0
+ 
+-            # Tạo một lỗ ngẫu nhiên trong tường
+-            hole_x = x + random.randint(0, width - 1)
+-            self.Maze[wall_y][hole_x].status = 1  # Path
++                # Tạo một lỗ ngẫu nhiên trong tường
++                path_x = random_odd(x_left, x_right - 1)
++                self.Maze[wall_y][path_x].status = 1  # Path
+ 
+-            # Đệ quy chia hai phần
+-            self.__divide(x, y, width, wall_y - y)
+-            self.__divide(x, wall_y + 1, width, y + height - wall_y - 1)
++                # Đệ quy chia hai phần
++                __divide(x_left, y_left, x_right, wall_y - 1)
++                __divide(x_left, wall_y + 1, x_right, y_right)
+ 
+-        elif not horizontal and width >= 2:
+-            # Chia dọc - tạo tường dọc
+-            wall_x = x + random.randint(1, width - 1)
++            elif not horizontal and width >= 2:
++                # Chia dọc - tạo tường dọc
++                wall_x = random_even(x_left + 1, x_right - 1)
+ 
+-            # Tạo tường dọc
+-            for wy in range(y, y + height + 1):
+-                if wy < self.maze_height:
++                # Tạo tường dọc
++                for wy in range(y_left, y_right + 1):
+                     self.Maze[wy][wall_x].status = 0  # Wall
+ 
+-            # Tạo một lỗ ngẫu nhiên trong tường
+-            hole_y = y + random.randint(0, height - 1)
+-            self.Maze[hole_y][wall_x].status = 1  # Path
++                # Tạo một lỗ ngẫu nhiên trong tường
++                hole_y = random_odd(y_left, y_right - 1)
++                self.Maze[hole_y][wall_x].status = 1  # Path
+ 
+-            # Đệ quy chia hai phần
+-            self.__divide(x, y, wall_x - x, height)
+-            self.__divide(wall_x + 1, y, x + width - wall_x - 1, height)
++                # Đệ quy chia hai phần
++                __divide(x_left, y_left, wall_x - 1, y_right)
++                __divide(wall_x + 1, y_left, x_right, y_right)
++
++        def random_even(a, b):
++            evens = [i for i in range(a, b + 1) if i % 2 == 0]
++            return random.choice(evens) if evens else None
++
++        def random_odd(a, b):
++            odds = [i for i in range(a, b + 1) if i % 2 == 1]
++            return random.choice(odds) if odds else None
++
++        # Bắt đầu chia đệ quy từ khu vực bên trong
++        __divide(1, 1, self.maze_width - 2, self.maze_height - 2)
++
++
+ 
+ 
+     def __set_start_end(self):
+Index: Model/node_cell.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>class Node_Cell:\n    def __init__(self, x, y, status, visited, g_cost, h_cost):\n        self.x = x\n        self.y = y\n        self.status = status\n        self.visited = visited\n        self.g_cost = g_cost\n        self.h_cost = g_cost\n        self.f_cost = g_cost + h_cost\n\n    def get_position(self):\n        return (self.x, self.y)\n\n    def get_status(self):\n        return self.status\n\n    def is_visited(self):\n        return self.visited\n\n    def get_g_cost(self):\n        return self.g_cost\n\n    def get_h_cost(self):\n        return self.h_cost\n\n    def get_f_cost(self):\n        return self.f_cost
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Model/node_cell.py b/Model/node_cell.py
+--- a/Model/node_cell.py	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ b/Model/node_cell.py	(date 1759958227000)
+@@ -5,7 +5,7 @@
+         self.status = status
+         self.visited = visited
+         self.g_cost = g_cost
+-        self.h_cost = g_cost
++        self.h_cost = h_cost  # Sửa lỗi: đã là h_cost thay vì g_cost
+         self.f_cost = g_cost + h_cost
+ 
+     def get_position(self):
+Index: .idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch
+===================================================================
+diff --git a/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch b/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch
+deleted file mode 100644
+--- a/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ /dev/null	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
+@@ -1,58 +0,0 @@
+-Index: .idea/workspace.xml
+-IDEA additional info:
+-Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+-<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"AutoImportSettings\">\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\n  </component>\n  <component name=\"ChangeListManager\">\n    <list default=\"true\" id=\"7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09\" name=\"Changes\" comment=\"\">\n      <change afterPath=\"$PROJECT_DIR$/.idea/modules.xml\" afterDir=\"false\" />\n      <change afterPath=\"$PROJECT_DIR$/Model/node_cell.py\" afterDir=\"false\" />\n      <change afterPath=\"$PROJECT_DIR$/PERFORMANCE_REPORT.md\" afterDir=\"false\" />\n      <change afterPath=\"$PROJECT_DIR$/performance_test.py\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/MazeSolverGame.iml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/MazeSolverGame.iml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/misc.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/misc.xml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/workspace.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/workspace.xml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/Model/__init__.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/Model/__init__.py\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/View/__init__.py\" beforeDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/View/main.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/View/main.py\" afterDir=\"false\" />\n    </list>\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\n  </component>\n  <component name=\"FileTemplateManagerImpl\">\n    <option name=\"RECENT_TEMPLATES\">\n      <list>\n        <option value=\"Python Script\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"Git.Settings\">\n    <option name=\"RECENT_BRANCH_BY_REPOSITORY\">\n      <map>\n        <entry key=\"$PROJECT_DIR$\" value=\"controller_01\" />\n      </map>\n    </option>\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\n    <option name=\"UPDATE_TYPE\" value=\"REBASE\" />\n  </component>\n  <component name=\"GitHubPullRequestSearchHistory\">{\n  &quot;lastFilter&quot;: {\n    &quot;state&quot;: &quot;OPEN&quot;,\n    &quot;assignee&quot;: &quot;ntquang-0410&quot;\n  }\n}</component>\n  <component name=\"GithubPullRequestsUISettings\">{\n  &quot;selectedUrlAndAccountId&quot;: {\n    &quot;url&quot;: &quot;https://github.com/ntquang-0410/MazeGameSolver.git&quot;,\n    &quot;accountId&quot;: &quot;72e0f247-2aff-4061-a88b-021bdedf9b8a&quot;\n  }\n}</component>\n  <component name=\"ProjectColorInfo\">{\n  &quot;associatedIndex&quot;: 5\n}</component>\n  <component name=\"ProjectId\" id=\"32uQQAJxvnVSlTAUsk8o5ZGkkyY\" />\n  <component name=\"ProjectLevelVcsManager\">\n    <ConfirmationsSetting value=\"2\" id=\"Add\" />\n  </component>\n  <component name=\"ProjectViewState\">\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\n    <option name=\"showLibraryContents\" value=\"true\" />\n  </component>\n  <component name=\"PropertiesComponent\"><![CDATA[{\n  \"keyToString\": {\n    \"ASKED_SHARE_PROJECT_CONFIGURATION_FILES\": \"true\",\n    \"Python.main.executor\": \"Run\",\n    \"RunOnceActivity.ShowReadmeOnStart\": \"true\",\n    \"RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252\": \"true\",\n    \"RunOnceActivity.git.unshallow\": \"true\",\n    \"SHARE_PROJECT_CONFIGURATION_FILES\": \"true\",\n    \"git-widget-placeholder\": \"main\",\n    \"last_opened_file_path\": \"/Volumes/Code Storage CS/TriTueNhanTao/MazeSolverGame\",\n    \"node.js.detected.package.eslint\": \"true\",\n    \"node.js.detected.package.tslint\": \"true\",\n    \"node.js.selected.package.eslint\": \"(autodetect)\",\n    \"node.js.selected.package.tslint\": \"(autodetect)\",\n    \"nodejs_package_manager_path\": \"npm\",\n    \"settings.editor.selected.configurable\": \"com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable\",\n    \"vue.rearranger.settings.migration\": \"true\"\n  }\n}]]></component>\n  <component name=\"SharedIndexes\">\n    <attachedChunks>\n      <set>\n        <option value=\"bundled-js-predefined-d6986cc7102b-9c94529fcfe0-JavaScript-PY-252.26199.168\" />\n        <option value=\"bundled-python-sdk-b3d66beaba9a-c6efb3732140-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26199.168\" />\n      </set>\n    </attachedChunks>\n  </component>\n  <component name=\"TaskManager\">\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\n      <changelist id=\"7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09\" name=\"Changes\" comment=\"\" />\n      <created>1758267962378</created>\n      <option name=\"number\" value=\"Default\" />\n      <option name=\"presentableId\" value=\"Default\" />\n      <updated>1758267962378</updated>\n      <workItem from=\"1758267962710\" duration=\"508000\" />\n      <workItem from=\"1758268590603\" duration=\"3814000\" />\n      <workItem from=\"1758622534559\" duration=\"3072000\" />\n      <workItem from=\"1758702027059\" duration=\"1469000\" />\n      <workItem from=\"1758737225104\" duration=\"894000\" />\n      <workItem from=\"1758786485559\" duration=\"344000\" />\n      <workItem from=\"1758998974267\" duration=\"94000\" />\n      <workItem from=\"1758999171934\" duration=\"1939000\" />\n      <workItem from=\"1759177407346\" duration=\"1094000\" />\n      <workItem from=\"1759251893544\" duration=\"8779000\" />\n    </task>\n    <servers />\n  </component>\n  <component name=\"TypeScriptGeneratedFilesManager\">\n    <option name=\"version\" value=\"3\" />\n  </component>\n  <component name=\"com.intellij.coverage.CoverageDataManagerImpl\">\n    <SUITE FILE_PATH=\"coverage/MazeSolverGame$__init__.coverage\" NAME=\"__init__ Coverage Results\" MODIFIED=\"1759135131500\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/View\" />\n    <SUITE FILE_PATH=\"coverage/MazeSolverGame$main.coverage\" NAME=\"main Coverage Results\" MODIFIED=\"1759266710071\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/View\" />\n  </component>\n</project>
+-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+-<+>UTF-8
+-===================================================================
+-diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+---- a/.idea/workspace.xml	(revision 263fb8435e9bbfe34973d6a9ce90bb8c1d5a177c)
+-+++ b/.idea/workspace.xml	(date 1759272936000)
+-@@ -4,19 +4,7 @@
+-     <option name="autoReloadType" value="SELECTIVE" />
+-   </component>
+-   <component name="ChangeListManager">
+--    <list default="true" id="7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09" name="Changes" comment="">
+--      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+--      <change afterPath="$PROJECT_DIR$/Model/node_cell.py" afterDir="false" />
+--      <change afterPath="$PROJECT_DIR$/PERFORMANCE_REPORT.md" afterDir="false" />
+--      <change afterPath="$PROJECT_DIR$/performance_test.py" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/.idea/MazeSolverGame.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/MazeSolverGame.iml" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/Model/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/Model/__init__.py" afterDir="false" />
+--      <change beforePath="$PROJECT_DIR$/View/__init__.py" beforeDir="false" />
+--      <change beforePath="$PROJECT_DIR$/View/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/View/main.py" afterDir="false" />
+--    </list>
+-+    <list default="true" id="7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09" name="Changes" comment="" />
+-     <option name="SHOW_DIALOG" value="false" />
+-     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+-     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+-@@ -32,7 +20,7 @@
+-   <component name="Git.Settings">
+-     <option name="RECENT_BRANCH_BY_REPOSITORY">
+-       <map>
+--        <entry key="$PROJECT_DIR$" value="controller_01" />
+-+        <entry key="$PROJECT_DIR$" value="main" />
+-       </map>
+-     </option>
+-     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+-@@ -69,7 +57,7 @@
+-     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+-     "RunOnceActivity.git.unshallow": "true",
+-     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+--    "git-widget-placeholder": "main",
+-+    "git-widget-placeholder": "model__01",
+-     "last_opened_file_path": "/Volumes/Code Storage CS/TriTueNhanTao/MazeSolverGame",
+-     "node.js.detected.package.eslint": "true",
+-     "node.js.detected.package.tslint": "true",
+-@@ -104,7 +92,7 @@
+-       <workItem from="1758998974267" duration="94000" />
+-       <workItem from="1758999171934" duration="1939000" />
+-       <workItem from="1759177407346" duration="1094000" />
+--      <workItem from="1759251893544" duration="8779000" />
+-+      <workItem from="1759251893544" duration="10341000" />
+-     </task>
+-     <servers />
+-   </component>
+Index: .idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025__06_00__Changes_.xml
+===================================================================
+diff --git a/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025__06_00__Changes_.xml b/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025__06_00__Changes_.xml
+deleted file mode 100644
+--- a/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025__06_00__Changes_.xml	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ /dev/null	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
+@@ -1,4 +0,0 @@
+-<changelist name="Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]" date="1759273244382" recycled="true" deleted="true">
+-  <option name="PATH" value="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch" />
+-  <option name="DESCRIPTION" value="Uncommitted changes before Checkout at 01/10/2025, 06:00 [Changes]" />
+-</changelist>
+\ No newline at end of file
+Index: .idea/copilotDiffState.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/copilotDiffState.xml b/.idea/copilotDiffState.xml
+new file mode 100644
+--- /dev/null	(date 1759964481000)
++++ b/.idea/copilotDiffState.xml	(date 1759964481000)
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="CopilotDiffPersistence">
++    <option name="pendingDiffs">
++      <map>
++        <entry key="$PROJECT_DIR$/Model/node_cell.py">
++          <value>
++            <PendingDiffInfo>
++              <option name="filePath" value="$PROJECT_DIR$/Model/node_cell.py" />
++              <option name="originalContent" value="class Node_Cell:&#10;    def __init__(self, x, y, status, visited, g_cost, h_cost):&#10;        self.x = x&#10;        self.y = y&#10;        self.status = status&#10;        self.visited = visited&#10;        self.g_cost = g_cost&#10;        self.h_cost = h_cost  # Sửa lỗi: đã là h_cost thay vì g_cost&#10;        self.f_cost = g_cost + h_cost&#10;&#10;    def get_position(self):&#10;        return (self.x, self.y)&#10;&#10;    def get_status(self):&#10;        return self.status&#10;&#10;    def is_visited(self):&#10;        return self.visited&#10;&#10;    def get_g_cost(self):&#10;        return self.g_cost&#10;&#10;    def get_h_cost(self):&#10;        return self.h_cost&#10;&#10;    def get_f_cost(self):&#10;        return self.f_cost" />
++              <option name="updatedContent" value="class Node_Cell:&#10;    def __init__(self, x, y, status, visited, g_cost, h_cost):&#10;        self.x = x&#10;        self.y = y&#10;        self.status = status&#10;        self.visited = visited&#10;        self.g_cost = g_cost&#10;        self.h_cost = h_cost  # Sửa lỗi: đã là h_cost thay vì g_cost&#10;        self.f_cost = g_cost + h_cost&#10;&#10;    def get_position(self):&#10;        return (self.x, self.y)&#10;&#10;    def get_status(self):&#10;        return self.status&#10;&#10;    def is_visited(self):&#10;        return self.visited&#10;&#10;    def get_g_cost(self):&#10;        return self.g_cost&#10;&#10;    def get_h_cost(self):&#10;        return self.h_cost&#10;&#10;    def get_f_cost(self):&#10;        return self.f_cost" />
++            </PendingDiffInfo>
++          </value>
++        </entry>
++      </map>
++    </option>
++  </component>
++</project>
+\ No newline at end of file
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"AutoImportSettings\">\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\n  </component>\n  <component name=\"ChangeListManager\">\n    <list default=\"true\" id=\"7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09\" name=\"Changes\" comment=\"checkout main_demo\">\n      <change beforePath=\"$PROJECT_DIR$/.idea/workspace.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/workspace.xml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/Model/__init__.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/Model/__init__.py\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/View/__init__.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/View/__init__.py\" afterDir=\"false\" />\n    </list>\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\n  </component>\n  <component name=\"FileTemplateManagerImpl\">\n    <option name=\"RECENT_TEMPLATES\">\n      <list>\n        <option value=\"Python Script\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"Git.Settings\">\n    <option name=\"RECENT_BRANCH_BY_REPOSITORY\">\n      <map>\n        <entry key=\"$PROJECT_DIR$\" value=\"model_01\" />\n      </map>\n    </option>\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\n    <option name=\"UPDATE_TYPE\" value=\"REBASE\" />\n  </component>\n  <component name=\"GitHubPullRequestSearchHistory\">{\n  &quot;lastFilter&quot;: {\n    &quot;state&quot;: &quot;OPEN&quot;,\n    &quot;assignee&quot;: &quot;ntquang-0410&quot;\n  }\n}</component>\n  <component name=\"GithubPullRequestsUISettings\">{\n  &quot;selectedUrlAndAccountId&quot;: {\n    &quot;url&quot;: &quot;https://github.com/ntquang-0410/MazeGameSolver.git&quot;,\n    &quot;accountId&quot;: &quot;72e0f247-2aff-4061-a88b-021bdedf9b8a&quot;\n  }\n}</component>\n  <component name=\"ProjectColorInfo\">{\n  &quot;associatedIndex&quot;: 5\n}</component>\n  <component name=\"ProjectId\" id=\"32uQQAJxvnVSlTAUsk8o5ZGkkyY\" />\n  <component name=\"ProjectLevelVcsManager\">\n    <ConfirmationsSetting value=\"2\" id=\"Add\" />\n  </component>\n  <component name=\"ProjectViewState\">\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\n    <option name=\"showLibraryContents\" value=\"true\" />\n  </component>\n  <component name=\"PropertiesComponent\">{\n  &quot;keyToString&quot;: {\n    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,\n    &quot;Python.__init__.executor&quot;: &quot;Run&quot;,\n    &quot;Python.main.executor&quot;: &quot;Run&quot;,\n    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,\n    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,\n    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,\n    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,\n    &quot;git-widget-placeholder&quot;: &quot;model__01&quot;,\n    &quot;last_opened_file_path&quot;: &quot;/Volumes/Code Storage CS/TriTueNhanTao/MazeSolverGame&quot;,\n    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,\n    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,\n    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,\n    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,\n    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,\n    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,\n    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;\n  }\n}</component>\n  <component name=\"RunManager\">\n    <configuration name=\"__init__\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\" nameIsGenerated=\"true\">\n      <module name=\"MazeSolverGame\" />\n      <option name=\"ENV_FILES\" value=\"\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$/Model\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <EXTENSION ID=\"PythonCoverageRunConfigurationExtension\" runner=\"coverage.py\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/View/__init__.py\" />\n      <option name=\"PARAMETERS\" value=\"\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n    <recent_temporary>\n      <list>\n        <item itemvalue=\"Python.__init__\" />\n      </list>\n    </recent_temporary>\n  </component>\n  <component name=\"SharedIndexes\">\n    <attachedChunks>\n      <set>\n        <option value=\"bundled-js-predefined-d6986cc7102b-3aa1da707db6-JavaScript-PY-252.26830.99\" />\n        <option value=\"bundled-python-sdk-164cda30dcd9-0af03a5fa574-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26830.99\" />\n      </set>\n    </attachedChunks>\n  </component>\n  <component name=\"TaskManager\">\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\n      <changelist id=\"7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09\" name=\"Changes\" comment=\"\" />\n      <created>1758267962378</created>\n      <option name=\"number\" value=\"Default\" />\n      <option name=\"presentableId\" value=\"Default\" />\n      <updated>1758267962378</updated>\n      <workItem from=\"1758267962710\" duration=\"508000\" />\n      <workItem from=\"1758268590603\" duration=\"3814000\" />\n      <workItem from=\"1758622534559\" duration=\"3072000\" />\n      <workItem from=\"1758702027059\" duration=\"1469000\" />\n      <workItem from=\"1758737225104\" duration=\"894000\" />\n      <workItem from=\"1758786485559\" duration=\"344000\" />\n      <workItem from=\"1758998974267\" duration=\"94000\" />\n      <workItem from=\"1758999171934\" duration=\"1939000\" />\n      <workItem from=\"1759177407346\" duration=\"1094000\" />\n      <workItem from=\"1759251893544\" duration=\"10341000\" />\n      <workItem from=\"1759420195598\" duration=\"3068000\" />\n      <workItem from=\"1759779391366\" duration=\"261000\" />\n      <workItem from=\"1759844343075\" duration=\"846000\" />\n      <workItem from=\"1759845200223\" duration=\"1567000\" />\n      <workItem from=\"1759517270173\" duration=\"1458000\" />\n      <workItem from=\"1759854933612\" duration=\"277000\" />\n      <workItem from=\"1759855304975\" duration=\"5479000\" />\n    </task>\n    <servers />\n  </component>\n  <component name=\"TypeScriptGeneratedFilesManager\">\n    <option name=\"version\" value=\"3\" />\n  </component>\n  <component name=\"Vcs.Log.Tabs.Properties\">\n    <option name=\"RECENT_FILTERS\">\n      <map>\n        <entry key=\"User\">\n          <value>\n            <list>\n              <RecentGroup>\n                <option name=\"FILTER_VALUES\">\n                  <option value=\"*\" />\n                </option>\n              </RecentGroup>\n            </list>\n          </value>\n        </entry>\n      </map>\n    </option>\n    <option name=\"TAB_STATES\">\n      <map>\n        <entry key=\"MAIN\">\n          <value>\n            <State />\n          </value>\n        </entry>\n      </map>\n    </option>\n  </component>\n  <component name=\"VcsManagerConfiguration\">\n    <MESSAGE value=\"checkout main_demo\" />\n    <option name=\"LAST_COMMIT_MESSAGE\" value=\"checkout main_demo\" />\n    <option name=\"GROUP_MULTIFILE_MERGE_BY_DIRECTORY\" value=\"true\" />\n  </component>\n  <component name=\"com.intellij.coverage.CoverageDataManagerImpl\">\n    <SUITE FILE_PATH=\"coverage/MazeSolverGame$__init__.coverage\" NAME=\"__init__ Coverage Results\" MODIFIED=\"1759866116028\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/Model\" />\n    <SUITE FILE_PATH=\"coverage/MazeSolverGame$main.coverage\" NAME=\"main Coverage Results\" MODIFIED=\"1759266710071\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/View\" />\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision e21af1f671dd921cca506d7a4dae6dbdb1955058)
++++ b/.idea/workspace.xml	(date 1759990502000)
+@@ -5,8 +5,12 @@
+   </component>
+   <component name="ChangeListManager">
+     <list default="true" id="7f6f1cd6-c0eb-4626-95ff-b3482aeeaa09" name="Changes" comment="checkout main_demo">
++      <change afterPath="$PROJECT_DIR$/.idea/copilotDiffState.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025,_06_00_[Changes]/shelved.patch" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_01_10_2025__06_00__Changes_.xml" beforeDir="false" />
+       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/Model/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/Model/__init__.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Model/node_cell.py" beforeDir="false" afterPath="$PROJECT_DIR$/Model/node_cell.py" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/View/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/View/__init__.py" afterDir="false" />
+     </list>
+     <option name="SHOW_DIALOG" value="false" />
+@@ -173,7 +177,7 @@
+     <option name="GROUP_MULTIFILE_MERGE_BY_DIRECTORY" value="true" />
+   </component>
+   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+-    <SUITE FILE_PATH="coverage/MazeSolverGame$__init__.coverage" NAME="__init__ Coverage Results" MODIFIED="1759866116028" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Model" />
++    <SUITE FILE_PATH="coverage/MazeSolverGame$__init__.coverage" NAME="__init__ Coverage Results" MODIFIED="1759990498037" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Model" />
+     <SUITE FILE_PATH="coverage/MazeSolverGame$main.coverage" NAME="main Coverage Results" MODIFIED="1759266710071" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/View" />
+   </component>
+ </project>
+\ No newline at end of file

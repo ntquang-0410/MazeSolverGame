@@ -7,11 +7,11 @@ GAME_TITLE = "Monkey's Treasure"
 FULLSCREEN = False
 RIGHT_PANEL_W = 360
 FPS = 60
-# Performance optimization settings
-PERFORMANCE_MODE = False  # Automatically enabled when window is small
-MIN_FPS_THRESHOLD = 30    # Switch to performance mode if FPS drops below this
-PERFORMANCE_FPS = 30      # Reduced FPS in performance mode
-MIN_CELL_SIZE_FOR_DETAILS = 12  # Don't draw detailed elements if cells are smaller
+# Cài đặt tối ưu hóa hiệu suất
+PERFORMANCE_MODE = False  # Tự động bật khi cửa sổ nhỏ
+MIN_FPS_THRESHOLD = 30    # Chuyển sang chế độ hiệu suất khi FPS giảm dưới mức này
+PERFORMANCE_FPS = 30      # FPS giảm trong chế độ hiệu suất
+MIN_CELL_SIZE_FOR_DETAILS = 12  # Không vẽ các thành phần chi tiết nếu ô nhỏ hơn
 GENERATOR = "None" # DFS, Kruskal, Binary Tree, Wilson, Recursive Division
 MODE = None  # Easy, Medium, Hard
 MAZE_COLS, MAZE_ROWS = 25, 19
@@ -20,7 +20,7 @@ CELL_GAP = 0  # khít nhau
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 IMG = lambda name: os.path.join(ASSETS, name)
 
-# ---------- Utility & Theme ----------
+# ---------- Tiện ích & Giao diện ----------
 def load_image(path, alpha=True):
     try:
         img = pygame.image.load(path)
@@ -53,7 +53,7 @@ def draw_glass_card(surface, rect, radius=18, bg=(16,20,16,180), border=(90,120,
     surface.blit(card, rect.topleft)
 
 def draw_smooth_rect(surface, rect, color, radius=16, border=0, border_color=(0,0,0)):
-    # Supersampling to smooth edges
+    # Siêu lấy mẫu để làm mịn các cạnh
     scale = 2
     temp = pygame.Surface((rect.w*scale, rect.h*scale), pygame.SRCALPHA)
     pygame.draw.rect(temp, color, temp.get_rect(), border_radius=radius*scale)
@@ -74,7 +74,7 @@ def try_load_font(size):
 def calculate_button_size(image, target_width=None, target_height=None):
     """Tính kích thước button giữ nguyên aspect ratio của hình ảnh gốc"""
     if image is None:
-        return (100, 40)  # Default size
+        return (100, 40)  # Kích thước mặc định
 
     orig_w, orig_h = image.get_size()
     aspect_ratio = orig_w / orig_h
@@ -101,7 +101,7 @@ def calculate_button_size(image, target_width=None, target_height=None):
         # Không có gì, dùng kích thước gốc
         return (orig_w, orig_h)
 
-# ---------- UI Controls ----------
+# ---------- Điều khiển giao diện ----------
 class Button:
     def __init__(self, rect, text, font, on_click=None, tooltip=None, theme='neutral', bg_image=None, keep_aspect=True):
         self.rect = pygame.Rect(rect)
@@ -181,7 +181,7 @@ class Button:
                 self.on_click()
 
 class Dropdown:
-    def __init__(self, rect, font, options, default_text="None", on_select=None):
+    def __init__(self, rect, font, options, default_text = "None", on_select = None):
         self.rect = pygame.Rect(rect)
         self.font = font
         self.options = options[:]
@@ -189,21 +189,21 @@ class Dropdown:
         self.selected = None
         self.default_text = default_text
         self.on_select = on_select
-        # Reduced debounce time for better responsiveness
+        # Giảm thời gian debounce để tăng độ phản hồi
         self.last_click_time = 0
-        self.click_debounce = 0.05  # Reduced from 0.1 to 0.05 seconds (50ms)
+        self.click_debounce = 0.025
 
     def draw(self, surface):
         bg = (20,28,20)
         border = (36,60,36)
 
-        # Use simplified drawing in performance mode to improve responsiveness
+        # Sử dụng vẽ đơn giản trong chế độ hiệu suất để cải thiện độ phản hồi
         if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):
-            # Simple rectangle for better performance
+            # Hình chữ nhật đơn giản để có hiệu suất tốt hơn
             pygame.draw.rect(surface, bg, self.rect, border_radius=8)
             pygame.draw.rect(surface, border, self.rect, 2, border_radius=8)
         else:
-            # Full quality drawing
+            # Vẽ chất lượng đầy đủ
             draw_shadow(surface, self.rect, radius=14, offset=(0,6), alpha=100)
             draw_smooth_rect(surface, self.rect, bg, radius=14, border=2, border_color=border)
 
@@ -211,7 +211,7 @@ class Dropdown:
         label = self.font.render(text, True, (240,240,240))
         surface.blit(label, (self.rect.x+12, self.rect.y+(self.rect.h-label.get_height())//2))
 
-        # caret
+        # mũi tên
         pygame.draw.polygon(surface, (200,200,200),
                             [(self.rect.right-22, self.rect.y+self.rect.h//2-4),
                              (self.rect.right-12, self.rect.y+self.rect.h//2-4),
@@ -221,7 +221,7 @@ class Dropdown:
             opt_h = self.rect.h
             panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))
 
-            # Simplified panel drawing for better performance
+            # Vẽ panel đơn giản để có hiệu suất tốt hơn
             if hasattr(surface, '_performance_mode') and getattr(surface, '_performance_mode', False):
                 pygame.draw.rect(surface, (240,240,240), panel, border_radius=8)
             else:
@@ -236,12 +236,11 @@ class Dropdown:
                 pygame.draw.line(surface, (230,230,230), (r.x, r.bottom-1), (r.right, r.bottom-1))
 
     def handle_event(self, event):
-        import time
         current_time = time.time()
 
-        # Simplified event handling - only use MOUSEBUTTONDOWN for immediate response
+        # Xử lý sự kiện đơn giản - chỉ sử dụng MOUSEBUTTONDOWN để phản hồi ngay lập tức
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Check debounce only for rapid successive clicks
+            # Kiểm tra debounce chỉ cho các click liên tiếp nhanh
             if current_time - self.last_click_time < self.click_debounce:
                 return
 
@@ -250,7 +249,7 @@ class Dropdown:
                 panel = pygame.Rect(self.rect.x, self.rect.bottom+6, self.rect.w, opt_h*len(self.options))
 
                 if panel.collidepoint(event.pos):
-                    # Option selection
+                    # Chọn tùy chọn
                     index = (event.pos[1]-panel.y)//opt_h
                     if 0 <= index < len(self.options):
                         self.selected = self.options[index]
@@ -259,11 +258,11 @@ class Dropdown:
                     self.open = False
                     self.last_click_time = current_time
                 else:
-                    # Click outside - close dropdown
+                    # Click bên ngoài - đóng dropdown
                     self.open = False
                     self.last_click_time = current_time
             else:
-                # Dropdown is closed - check if clicking on main rect
+                # Dropdown đã đóng - kiểm tra xem có click vào rect chính không
                 if self.rect.collidepoint(event.pos):
                     self.open = True
                     self.last_click_time = current_time
@@ -450,6 +449,7 @@ class MonkeyIdle(pygame.sprite.Sprite):
 # ---------- App ----------
 class App:
     def __init__(self):
+        self.selected_generation_algo = None
         self.cell_size = None
         self.maze_rect = None
         pygame.init()
@@ -460,13 +460,13 @@ class App:
         self.window_rect = self.screen.get_rect()
         self.running = True
 
-        # Performance optimization - Cache system
+        # Tối ưu hóa hiệu suất - Hệ thống cache
         self._image_cache = {}
         self._surface_cache = {}
         self._last_cell_size = None
         self._bg_cache = {}
 
-        # Performance monitoring and optimization
+        # Giám sát và tối ưu hóa hiệu suất
         self.fps_samples = []
         self.current_fps = FPS
         self.performance_mode = PERFORMANCE_MODE
@@ -475,20 +475,20 @@ class App:
         self.last_draw_time = 0
         self.skip_expensive_effects = False
 
-        # Precomputed maze surface for small sizes
+        # Bề mặt mê cung được tính toán trước cho kích thước nhỏ
         self._maze_surface = None
         self._maze_surface_dirty = True
         self._ui_surface = None
         self._ui_surface_dirty = True
 
-        # assets
+        # tài nguyên
         self.bg_jungle = load_image(IMG("bg_jungle.png"))
         self.bg_start = load_image(IMG("bg_start.png"))
         self.tile_wall = load_image(IMG("tile_wall.png"))
         self.monkey_img = load_image(IMG("monkey.png"))
         self.banana_img = load_image(IMG("banana_rainbow.png"))
 
-        # button assets
+        # tài nguyên nút bấm
         self.btn_assets = {
             'start': load_image(IMG("button/start_btn.png")),
             'restart': load_image(IMG("button/restart_btn.png")),
@@ -502,23 +502,23 @@ class App:
             'win_restart': load_image(IMG("button/win_restart_btn.png"))
         }
 
-        # floor tiles
+        # ô nền
         self.floor_tiles = []
         tiles_dir = os.path.join(ASSETS, "tiles")
         for name in sorted(os.listdir(tiles_dir)):
             if name.lower().endswith(".png"):
                 self.floor_tiles.append(load_image(os.path.join(tiles_dir, name)))
 
-        # fonts
+        # phông chữ
         self.font_title = try_load_font(64)
         self.font_ui = try_load_font(26)
         self.font_small = try_load_font(20)
 
-        # state
+        # trạng thái
         self.state = "start"
         self.paused = False
         self.auto_on = False
-        self.selected_algo = None
+        self.selected_solving_algo = None
         self.steps = 0
         self.timer = 0.0
         self.start_time = None
@@ -533,7 +533,7 @@ class App:
         self.is_fullscreen = FULLSCREEN  # Ban đầu là full màn hình
         self.is_minimized = False  # Trạng thái thu nhỏ
 
-        # Window dragging state
+        # Trạng thái kéo cửa sổ
         self.dragging = False
         self.drag_offset = (0, 0)
 
@@ -574,11 +574,11 @@ class App:
             keep_aspect=False
         )
 
-        # start screen - tăng kích thước nút start
+        # màn hình bắt đầu - tăng kích thước nút start
         start_size = calculate_button_size(self.btn_assets['start'], target_width=240)  # Tăng từ 180 lên 240
         self.btn_start = Button((0, 0, start_size[0], start_size[1]), "", self.font_ui, self.goto_game, theme='green', bg_image=self.btn_assets['start'], keep_aspect=False)
 
-        # game UI
+        # giao diện game
         self.compute_layout()
 
         # Tính toán vị trí sidebar và margin
@@ -616,11 +616,11 @@ class App:
         cur_y += row2_height + row_spacing
 
         # Dòng 3: Dropdown (toàn bộ chiều rộng)
-        self.dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="Select Solving Algorithm", on_select=self.set_algo)
+        self.solving_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["BFS","DFS","UCS","A*","Bidirectional Search"], default_text="Select Solving Algorithm", on_select = self.set_algo)
         cur_y += 40 + row_spacing
 
         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
-        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["DFS", "Kruskal", "Binary Tree", "Wilson", "Recursive Division"], default_text="Select Generation Algorithm", on_select=self.set_generation_algo)
+        self.maze_gen_dropdown = Dropdown((spx, cur_y, target_btn_w, 40), self.font_ui, ["DFS", "Kruskal", "Binary_Tree", "Wilson", "Recursive_Division"], default_text="Select Generation Algorithm", on_select = self.set_generation_algo)
         cur_y += 40 + row_spacing
 
         # Dòng 3.6: Nút Generate
@@ -633,13 +633,13 @@ class App:
         self.btn_history = Button((spx, cur_y, half_btn_w, row4_height), "", self.font_ui, self.open_history, theme='purple', bg_image=self.btn_assets['history'], keep_aspect=False)
         self.btn_back = Button((spx + half_btn_w + btn_gap, cur_y, half_btn_w, row4_height), "", self.font_ui, self.goto_start, theme='red', bg_image=self.btn_assets['back'], keep_aspect=False)
 
-        # maze
+        # mê cung
         self.MazeGenerated = GenerationModel(MAZE_COLS, MAZE_ROWS, GENERATOR).generate_maze()
         self.maze = self.MazeGenerated
         self.player = [1,1]  # Khởi tạo từ (1,1) thay vì (0,0)
         self.prepare_sprites()
 
-        # prebuild random floor map for repeatability
+        # xây dựng trước bản đồ nền ngẫu nhiên để có tính lặp lại
         random.seed(42)
         self.floor_map = [[random.randrange(len(self.floor_tiles)) for _ in range(MAZE_COLS)] for _ in range(MAZE_ROWS)]
 
@@ -648,7 +648,7 @@ class App:
 
     def prepare_sprites(self):
         cell = self.cell_size
-        # Clear cache if cell size changed
+        # Xóa cache nếu kích thước ô thay đổi
         if self._last_cell_size != cell:
             self.clear_size_dependent_cache()
             self._last_cell_size = cell
@@ -657,15 +657,15 @@ class App:
             w = h = int(cell*ratio)
             return self.get_scaled_image(img, (w,h))
 
-        # Pre-scale and cache all floor tiles for current cell size
+        # Chia tỷ lệ trước và cache tất cả ô nền cho kích thước ô hiện tại
         self.scaled_floor_tiles = []
         for tile in self.floor_tiles:
             self.scaled_floor_tiles.append(self.get_scaled_image(tile, (cell, cell)))
 
-        # Pre-scale wall tile
+        # Chia tỷ lệ trước ô tường
         self.scaled_wall_tile = self.get_scaled_image(self.tile_wall, (cell, cell))
 
-        # idle frames
+        # khung hình chờ
         stand_dir = os.path.join(ASSETS, "monkey_stand")
         frames = []
         if os.path.exists(stand_dir):
@@ -675,7 +675,7 @@ class App:
         self.monkey_idle = MonkeyIdle(frames, scale_to_cell(self.monkey_img), self.cell_size)
         self.banana = FloatingBanana(scale_to_cell(self.banana_img, 0.85), self.cell_size)
 
-    # ---- Window controls
+    # ---- Điều khiển cửa sổ
     def update_window_controls(self):
         """Cập nhật vị trí window controls khi cửa sổ thay đổi kích thước"""
         btn_size = 48  # Tăng kích thước nút
@@ -747,7 +747,7 @@ class App:
         cur_y += row2_height + row_spacing
 
         # Dòng 3: Dropdown
-        self.dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
+        self.solving_dropdown.rect = pygame.Rect(spx, cur_y, target_btn_w, 40)
         cur_y += 40 + row_spacing
 
         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
@@ -891,7 +891,7 @@ class App:
 
     # ---- State transitions
     def goto_start(self):
-        self.save_run(label="Manual" if not self.auto_on else f"Auto ({self.selected_algo or 'None'})")
+        self.save_run(label="Manual" if not self.auto_on else f"Auto ({self.selected_solving_algo or 'None'})")
         self.state = "start"; self.modal_history.visible=False
 
     def goto_game(self):
@@ -900,7 +900,7 @@ class App:
     def reset_run(self):
         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
         self.paused = False; self.auto_on=False
-        self.player= [1,1]  # Bắt đầu từ (1,1) thay vì (0,0) vì viền ngoài là tường
+        self.player= [1,1]
         self.maze = self.MazeGenerated
         self.prepare_sprites()
         self.modal_victory.hide()
@@ -908,7 +908,7 @@ class App:
     def restart_level(self): self.reset_run()
     def toggle_play(self): self.paused = not self.paused
     def toggle_auto(self): self.auto_on = not self.auto_on
-    def set_algo(self, name): self.selected_algo = name
+    def set_algo(self, name): self.selected_solving_algo = name
     def set_generation_algo(self, name):
         """Thiết lập thuật toán sinh mê cung được chọn"""
         self.selected_generation_algo = name
@@ -947,7 +947,7 @@ class App:
         duration = self.timer; steps=self.steps
         if duration<=0 and steps<=0: return
         rank = "S" if duration<30 and steps<50 else ("A" if duration<60 else ("B" if duration<120 else "C"))
-        mode = label if "Auto" in label else ("Manual" if not self.auto_on else f"Auto ({self.selected_algo or 'None'})")
+        mode = label if "Auto" in label else ("Manual" if not self.auto_on else f"Auto ({self.selected_solving_algo or 'None'})")
         self.history.append({"time_str": f"{int(duration//60):02d}:{int(duration%60):02d}", "steps": steps, "rank": rank, "mode": mode})
 
     # ---- Input
@@ -996,7 +996,7 @@ class App:
                     self.modal_victory.handle_event(event)
                 else:
                     for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)
-                    self.dropdown.handle_event(event)
+                    self.solving_dropdown.handle_event(event)
                     self.maze_gen_dropdown.handle_event(event)
                     if event.type == pygame.KEYDOWN and not self.paused:
                         if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)
@@ -1123,7 +1123,7 @@ class App:
         cur_y += max(self.btn_play.rect.height, self.btn_pause.rect.height) + spacing
 
         # Dòng 3: Dropdown (full width)
-        self.dropdown.rect.topleft = (spx, cur_y)
+        self.solving_dropdown.rect.topleft = (spx, cur_y)
         cur_y += 36 + spacing
 
         # Dòng 3.5: Dropdown cho thuật toán sinh mê cung
@@ -1141,11 +1141,11 @@ class App:
             b.draw(self.screen)
         self.btn_generate.draw(self.screen)
 
-        # Vẽ dropdown cuối cùng để chúng hiển thị trên các element khác
-        self.dropdown.draw(self.screen)
+        # Vẽ solving_dropdown cuối cùng để chúng hiển thị trên các element khác
+        self.solving_dropdown.draw(self.screen)
         self.maze_gen_dropdown.draw(self.screen)
 
-        # maze frame card - simplified for performance mode
+        # mê cung frame card - simplified for performance mode
         if self.skip_expensive_effects:
             pygame.draw.rect(self.screen, (12,22,12), self.maze_rect, border_radius=8)
         else:
@@ -1357,3 +1357,4 @@ class App:
 
 if __name__ == "__main__":
     App().run()
+
