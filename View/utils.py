@@ -91,3 +91,5 @@ def calculate_button_size(image, target_width=None, target_height=None):
             return (w_from_height, h_from_height)
     else:
         return (orig_w, orig_h)
+
+

@@ -258,3 +258,4 @@ class GameController:
         """Go to game screen"""
         self.state = "game"
         self.reset_game()
+

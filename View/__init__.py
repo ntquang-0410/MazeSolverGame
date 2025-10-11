@@ -801,7 +801,8 @@ class App:
         target_btn_w = sidebar_card_w - (side_margin * 2)
         row_spacing = max(6, int(8 * scale_factor))  # Giảm từ 10 xuống 8
 
-        # Chiều cao cố định cho tất cả các nút để đồng nhất
+        # Chiều cao tối đa cho tất cả các nút để đồng nhất
+        max_btn_h = 110  # Chiều cao tối đa (tăng từ 90 lên 110)
         target_btn_h = int(85 * scale_factor)
         target_btn_h = max(70, target_btn_h)
 
@@ -1021,8 +1022,9 @@ class App:
         if not hasattr(self, 'selected_generation_algo') or self.selected_generation_algo is None:
             return
 
-        # Clear old particles
+        # Clear old particles but don't clear during animation
         self.particle_system.clear()
+        self.wall_break_effects = []  # Reset wall break effects
 
         # Tạo model với animation enabled
         self.generation_model = GenerationModel(MAZE_COLS, MAZE_ROWS, self.selected_generation_algo)
@@ -1167,7 +1169,7 @@ class App:
                         # Apply next step
                         has_more = self.generation_model.apply_next_step()
 
-                        # Emit particles based on action
+                        # Emit particles based on action - ALWAYS emit particles for visible effects
                         if self.maze_rect and self.cell_size:
                             # Calculate screen position
                             screen_x = self.maze_rect.x + x * self.cell_size + self.cell_size // 2
@@ -1186,42 +1188,74 @@ class App:
                                     path_color=(150, 100, 100)
                                 )
 
-                    # Copy updated maze state
-                    self.maze = self.generation_model.Maze
+                    # Copy updated maze state - DEEP COPY to preserve references
+                    self.maze = [[self.generation_model.Maze[y][x] for x in range(MAZE_COLS)] for y in range(MAZE_ROWS)]
 
                     if not has_more:
-                        # Animation complete - set start and end positions
+                        # Animation complete - properly set start and end positions
                         self.generating_maze = False
                         self.paused = False
 
-                        # Find and set start position (first path cell)
+                        # Store the completed maze as the generated maze
+                        self.MazeGenerated = [[self.generation_model.Maze[y][x] for x in range(MAZE_COLS)] for y in range(MAZE_ROWS)]
+
+                        # Find and set start position (first accessible path cell from top-left)
                         start_found = False
-                        for y in range(MAZE_ROWS):
-                            for x in range(MAZE_COLS):
-                                if self.maze[y][x].status == 1:
-                                    self.maze[y][x].status = 2  # Start
+                        for y in range(1, MAZE_ROWS - 1):  # Start from row 1, avoid borders
+                            for x in range(1, MAZE_COLS - 1):  # Start from col 1, avoid borders
+                                if self.MazeGenerated[y][x].status == 1:  # Found a path cell
+                                    self.MazeGenerated[y][x].status = 2  # Set as Start
+                                    self.maze[y][x].status = 2  # Also update current maze
                                     self.player = [x, y]
                                     start_found = True
                                     break
                             if start_found:
                                 break
 
-                        # Find and set end position (last path cell)
+                        # Find and set end position (last accessible path cell from bottom-right)
                         end_found = False
-                        for y in range(MAZE_ROWS - 1, -1, -1):
-                            for x in range(MAZE_COLS - 1, -1, -1):
-                                if self.maze[y][x].status == 1:
-                                    self.maze[y][x].status = 3  # End
+                        for y in range(MAZE_ROWS - 2, 0, -1):  # Search from bottom-right, avoid borders
+                            for x in range(MAZE_COLS - 2, 0, -1):  # Search from right to left, avoid borders
+                                if self.MazeGenerated[y][x].status == 1:  # Found a path cell
+                                    self.MazeGenerated[y][x].status = 3  # Set as End
+                                    self.maze[y][x].status = 3  # Also update current maze
                                     end_found = True
                                     break
                             if end_found:
                                 break
 
-                        self.MazeGenerated = self.maze
+                        # Ensure we have valid start and end positions with fallbacks
+                        if not start_found:
+                            # Fallback: find ANY path cell near top-left for start
+                            for y in range(1, min(5, MAZE_ROWS - 1)):
+                                for x in range(1, min(5, MAZE_COLS - 1)):
+                                    if self.MazeGenerated[y][x].status == 1:
+                                        self.MazeGenerated[y][x].status = 2
+                                        self.maze[y][x].status = 2
+                                        self.player = [x, y]
+                                        start_found = True
+                                        break
+                                if start_found:
+                                    break
+
+                        if not end_found:
+                            # Fallback: find ANY path cell near bottom-right for end
+                            for y in range(max(MAZE_ROWS - 5, 1), MAZE_ROWS - 1):
+                                for x in range(max(MAZE_COLS - 5, 1), MAZE_COLS - 1):
+                                    if self.MazeGenerated[y][x].status == 1 and (x != self.player[0] or y != self.player[1]):
+                                        self.MazeGenerated[y][x].status = 3
+                                        self.maze[y][x].status = 3
+                                        end_found = True
+                                        break
+                                if end_found:
+                                    break
+
+                        # Force invalidate cache to show new states
+                        self.invalidate_maze_surface()
                         self.start_time = time.time()
 
-                        # Clear particles when done
-                        self.particle_system.clear()
+                        # Don't clear particles immediately - let them fade naturally
+                        # self.particle_system.clear()  # Removed this line
                         break
                 else:
                     self.generating_maze = False
@@ -1350,7 +1384,8 @@ class App:
         full_btn_w = scaled_panel_w - (side_margin * 2)  # Chiều rộng tối đa
         spacing = max(6, int(8*scale_factor))  # Giảm từ 10 xuống 8
 
-        # Chiều cao cố định cho tất cả các nút để đồng nhất
+        # Chiều cao tối đa cho tất cả các nút để đồng nhất
+        max_btn_h = 110  # Chiều cao tối đa (tăng từ 90 lên 110)
         target_btn_h = int(85 * scale_factor)
         target_btn_h = max(70, target_btn_h)
 
@@ -1442,77 +1477,85 @@ class App:
                     # Use pre-scaled cached tiles instead of scaling every frame
                     self.screen.blit(self.scaled_floor_tiles[idx], (x,y))
 
-            # draw player (monkey) - VẼ TRƯỚC walls để đứng sau tường
-            px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
-            py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
-            self.screen.blit(self.monkey_idle.current(), (px, py))
-
-            # draw banana goal - VẼ TRƯỚC walls để đứng sau tường
-            gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
-            gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
-
-            if self.skip_expensive_effects:
-                # Static banana without animation
-                self.screen.blit(self.banana.base_image, (gx, gy))
-            else:
-                # Animated floating banana
-                self.banana.draw(self.screen, (gx, gy))
-
-            # draw walls using cached scaled tile - VẼ SAU player và banana để che chúng
+            # Draw walls using cached scaled tile - VẼ TRƯỚC các overlays khác
             for r in range(MAZE_ROWS):
                 for c in range(MAZE_COLS):
-                    if self.maze[r][c].status == 0:
-                        x = self.maze_rect.x + c*cell; y = self.maze_rect.y + r*cell
+                    if self.maze[r][c].status == 0:  # WALL
+                        x = self.maze_rect.x + c*cell
+                        y = self.maze_rect.y + r*cell
                         # Use pre-scaled cached wall tile
                         self.screen.blit(self.scaled_wall_tile, (x, y))
 
-            # Hiệu ứng cho đường đi đang được tạo
-            if self.generating_maze and self.generation_model:
-                current_step = self.generation_model.current_step - 1
-                if current_step >= 0:
-                    # Tạo hiệu ứng sáng cho các ô vừa phá tường
-                    highlight_range = 8  # Số ô được highlight
-                    for i in range(max(0, current_step - highlight_range), current_step + 1):
-                        if i < len(self.generation_model.generation_steps):
-                            step_x, step_y, action = self.generation_model.generation_steps[i]
+            # Draw special state overlays for all states
+            for r in range(MAZE_ROWS):
+                for c in range(MAZE_COLS):
+                    cell_status = self.maze[r][c].status
+                    x = self.maze_rect.x + c * cell
+                    y = self.maze_rect.y + r * cell
 
-                            if action in ['break_wall', 'path']:
-                                # Vẽ hiệu ứng cho path và break_wall
-                                x = self.maze_rect.x + step_x * cell
-                                y = self.maze_rect.y + step_y * cell
+                    if cell_status == 1:  # PATH - Normal walkable path
+                        # No special overlay, just the floor tile
+                        pass
+                    elif cell_status == 2:  # START - Starting position
+                        # Green overlay for start position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 255, 100, 150))  # Light green with transparency
+                        self.screen.blit(overlay, (x, y))
+                        # Add border
+                        pygame.draw.rect(self.screen, (50, 200, 50), (x, y, cell, cell), 3)
+                        # Add "S" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("S", True, (0, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            self.screen.blit(text, text_rect)
+                    elif cell_status == 3:  # END - Goal position
+                        # Gold/yellow overlay for end position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((255, 215, 0, 150))  # Gold with transparency
+                        self.screen.blit(overlay, (x, y))
+                        # Add border
+                        pygame.draw.rect(self.screen, (255, 165, 0), (x, y, cell, cell), 3)
+                        # Add "E" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("E", True, (139, 69, 19))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            self.screen.blit(text, text_rect)
+                    elif cell_status == 4:  # PATH_FOUND - Highlight found path
+                        # Create a semi-transparent blue overlay for found path
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 150, 255, 120))  # Light blue with transparency
+                        self.screen.blit(overlay, (x, y))
+                        # Add a subtle border
+                        pygame.draw.rect(self.screen, (80, 120, 255), (x, y, cell, cell), 2)
+                    elif cell_status == 5:  # MOVED_PATH - Show where player has moved
+                        # Create a semi-transparent green overlay for moved path
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                        self.screen.blit(overlay, (x, y))
+                        # Add small dots to show movement trail
+                        dot_size = max(2, cell // 8)
+                        pygame.draw.circle(self.screen, (60, 200, 100),
+                                         (x + cell//2, y + cell//2), dot_size)
 
-                                # Tính độ sáng giảm dần theo thời gian
-                                age = current_step - i
-                                intensity = 1 - (age / highlight_range)
+        # draw player (monkey) - VẼ SAU walls và overlays để hiển thị trên cùng
+        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
+        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
+        self.screen.blit(self.monkey_idle.current(), (px, py))
 
-                                # Màu vàng sáng cho ô vừa phá
-                                if age == 0:
-                                    # Ô hiện tại - sáng nhất với viền sáng
-                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                                    overlay.fill((255, 255, 150, 220))
-                                    self.screen.blit(overlay, (x, y))
-                                    # Viền sáng
-                                    pygame.draw.rect(self.screen, (255, 255, 200), (x, y, cell, cell), 2)
-                                else:
-                                    # Ô cũ hơn - gradient màu từ vàng sang xanh nhạt
-                                    alpha = int(180 * intensity)
-                                    r = int(255 * intensity + 100 * (1 - intensity))
-                                    g = int(255 * intensity + 200 * (1 - intensity))
-                                    b = int(150 * intensity + 150 * (1 - intensity))
-                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                                    overlay.fill((r, g, b, alpha))
-                                    self.screen.blit(overlay, (x, y))
+        # draw banana goal - VẼ SAU walls và overlays để hiển thị trên cùng
+        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
+        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
 
-                            elif action == 'build_wall':
-                                # Hiệu ứng xây tường (cho Recursive Division)
-                                x = self.maze_rect.x + step_x * cell
-                                y = self.maze_rect.y + step_y * cell
-                                age = current_step - i
-                                if age < 5:
-                                    alpha = int(150 * (1 - age / 5))
-                                    overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                                    overlay.fill((200, 100, 100, alpha))
-                                    self.screen.blit(overlay, (x, y))
+        if self.skip_expensive_effects:
+            # Static banana without animation
+            self.screen.blit(self.banana.base_image, (gx, gy))
+        else:
+            # Animated floating banana
+            self.banana.draw(self.screen, (gx, gy))
 
         # Draw particles (vẽ SAU maze và player để particles nằm trên cùng)
         if self.generating_maze:
@@ -1629,6 +1672,61 @@ class App:
                         x = c * cell
                         y = r * cell
                         maze_surface.blit(self.scaled_wall_tile, (x, y))
+
+            # Draw special state overlays for all states - optimized version
+            for r in range(MAZE_ROWS):
+                for c in range(MAZE_COLS):
+                    cell_status = self.maze[r][c].status
+                    x = c * cell
+                    y = r * cell
+
+                    if cell_status == 1:  # PATH - Normal walkable path
+                        # No special overlay, just the floor tile
+                        pass
+                    elif cell_status == 2:  # START - Starting position
+                        # Green overlay for start position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 255, 100, 150))  # Light green with transparency
+                        maze_surface.blit(overlay, (x, y))
+                        # Add border
+                        pygame.draw.rect(maze_surface, (50, 200, 50), (x, y, cell, cell), 3)
+                        # Add "S" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("S", True, (0, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            maze_surface.blit(text, text_rect)
+                    elif cell_status == 3:  # END - Goal position
+                        # Gold/yellow overlay for end position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((255, 215, 0, 150))  # Gold with transparency
+                        maze_surface.blit(overlay, (x, y))
+                        # Add border
+                        pygame.draw.rect(maze_surface, (255, 165, 0), (x, y, cell, cell), 3)
+                        # Add "E" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("E", True, (139, 69, 19))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            maze_surface.blit(text, text_rect)
+                    elif cell_status == 4:  # PATH_FOUND - Highlight found path
+                        # Create a semi-transparent blue overlay for found path
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 150, 255, 120))  # Light blue with transparency
+                        maze_surface.blit(overlay, (x, y))
+                        # Add a subtle border
+                        pygame.draw.rect(maze_surface, (80, 120, 255), (x, y, cell, cell), 2)
+                    elif cell_status == 5:  # MOVED_PATH - Show where player has moved
+                        # Create a semi-transparent green overlay for moved path
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                        maze_surface.blit(overlay, (x, y))
+                        # Add small dots to show movement trail
+                        dot_size = max(2, cell // 8)
+                        pygame.draw.circle(maze_surface, (60, 200, 100),
+                                         (x + cell//2, y + cell//2), dot_size)
 
             self._maze_surface = maze_surface
             self._maze_surface_dirty = False
