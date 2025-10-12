@@ -75,7 +75,14 @@ class GameController:
         self.solution_path = []
         self.solution_index = 0
         self.solver = None
-    
+
+        # Clear footprints from all maze cells
+        if self.maze:
+            for y in range(self.maze_rows):
+                for x in range(self.maze_cols):
+                    if self.maze[y][x]:
+                        self.maze[y][x].set_footprint_type(None)
+
     def start_game(self):
         """Start the game"""
         self.state = "game"
