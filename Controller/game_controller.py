@@ -5,6 +5,7 @@ Manages game state, logic, and coordinates between Model and View
 import time
 from typing import Optional, Tuple, List, Dict
 from Model import GenerationModel, SolvingModel
+from Model.footprint_manager import FootprintManager
 
 
 class GameController:
@@ -48,6 +49,9 @@ class GameController:
         # History
         self.history = []
         
+        # Footprint manager for path visualization
+        self.footprint_manager = FootprintManager()
+
         # Initialize with default maze
         self.generate_maze("DFS")
     
@@ -124,9 +128,35 @@ class GameController:
         if success:
             self.solution_path = self.solver.solution_path
             self.solution_index = 0
-        
+            # Cập nhật footprint cho maze dựa trên solution path
+            self._update_maze_footprints()
+
         return success
     
+    def _update_maze_footprints(self):
+        """Cập nhật footprint cho các cell trong maze dựa trên solution path"""
+        if not self.solution_path or not self.maze:
+            return
+
+        # Lấy visited positions từ solver nếu có
+        visited_positions = []
+        if hasattr(self.solver, 'visited_cells') and self.solver.visited_cells:
+            visited_positions = list(self.solver.visited_cells)
+
+        # Phân tích path và xác định footprint cho từng vị trí
+        footprint_map = self.footprint_manager.get_footprint_for_algorithm_step(
+            self.solution_path,
+            visited_positions,
+            self.selected_algo
+        )
+
+        # Cập nhật footprint cho các cell trong maze
+        for y in range(self.maze_rows):
+            for x in range(self.maze_cols):
+                pos = (x, y)
+                if pos in footprint_map:
+                    self.maze[y][x].set_footprint_type(footprint_map[pos])
+
     def move_player(self, dx: int, dy: int) -> bool:
         """
         Move player in specified direction
@@ -258,4 +288,3 @@ class GameController:
         """Go to game screen"""
         self.state = "game"
         self.reset_game()
-

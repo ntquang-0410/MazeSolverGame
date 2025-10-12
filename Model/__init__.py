@@ -12,8 +12,10 @@ from Model.node_cell import Node_Cell
 # 1: Path
 # 2: Start
 # 3: End
-# 4: Path Found
-# 5: Moved Path
+# 4: Path Found (Solution Path)
+# 5: Moved Path (Player moved)
+# 6: Visited (Algorithm explored but not in solution)
+# 7: Current Processing (Currently being processed by algorithm)
 
 class GenerationModel:
     def __init__(self, maze_width, maze_height, Algorithm):
@@ -464,9 +466,9 @@ class SolvingModel:
                     came_from[neighbor] = current
                     queue.append(neighbor)
 
-                    # Đánh dấu ô đã thăm
+                    # Đánh dấu ô đã thăm với status 6 (VISITED)
                     if neighbor != self.end_pos:
-                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                        self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                     self.visited_cells.append(neighbor)
 
@@ -496,9 +498,9 @@ class SolvingModel:
                     came_from[neighbor] = current
                     stack.append(neighbor)
 
-                    # Đánh dấu ô đã thăm
+                    # Đánh dấu ô đã thăm với status 6 (VISITED)
                     if neighbor != self.end_pos:
-                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                        self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                     self.visited_cells.append(neighbor)
 
@@ -537,9 +539,9 @@ class SolvingModel:
                     came_from[neighbor] = current
                     heapq.heappush(heap, (new_cost, neighbor))
 
-                    # Đánh dấu ô đã thăm
+                    # Đánh dấu ô đã thăm với status 6 (VISITED)
                     if neighbor != self.end_pos:
-                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                        self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                     self.visited_cells.append(neighbor)
 
@@ -579,9 +581,9 @@ class SolvingModel:
                     came_from[neighbor] = current
                     heapq.heappush(heap, (f_score, tentative_g_score, neighbor))
 
-                    # Đánh dấu ô đã thăm
+                    # Đánh dấu ô đã thăm với status 6 (VISITED)
                     if neighbor != self.end_pos:
-                        self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                        self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                     self.visited_cells.append(neighbor)
 
@@ -635,7 +637,7 @@ class SolvingModel:
                         queue_start.append(neighbor)
 
                         if neighbor not in [self.start_pos, self.end_pos]:
-                            self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                            self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                         self.visited_cells.append(neighbor)
 
@@ -671,7 +673,7 @@ class SolvingModel:
                         queue_end.append(neighbor)
 
                         if neighbor not in [self.start_pos, self.end_pos]:
-                            self.maze_grid[neighbor[1]][neighbor[0]].status = 5  # Moved Path
+                            self.maze_grid[neighbor[1]][neighbor[0]].status = 6  # VISITED
 
                         self.visited_cells.append(neighbor)
 

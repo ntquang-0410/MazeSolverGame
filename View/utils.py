@@ -27,6 +27,35 @@ def load_image(path, alpha=True):
         return surf
 
 
+def load_monkey_path_images():
+    """Load all monkey path images for use in floor tiles states 4 and 5"""
+    monkey_path_dir = os.path.join(ASSETS, "monkey_path")
+    monkey_path_images = {}
+
+    # Define the mapping of image files to their keys
+    image_files = {
+        'bottom_to_top': 'bottom_to_top.png',
+        'left_to_right': 'left_to_right.png',
+        'right_to_left': 'right_to_left.png',
+        'top_to_bottom': 'top_to_bottom.png',
+        'cross_footprints': 'cross_footprints.png',
+        'fork_footprints': 'folk_in_the_footprints.png',
+        'turn_back': 'turn_back.png'
+    }
+
+    for key, filename in image_files.items():
+        image_path = os.path.join(monkey_path_dir, filename)
+        if os.path.exists(image_path):
+            monkey_path_images[key] = load_image(image_path)
+        else:
+            # Create a placeholder if image doesn't exist
+            placeholder = pygame.Surface((64, 64), pygame.SRCALPHA)
+            placeholder.fill((100, 100, 200, 100))
+            monkey_path_images[key] = placeholder
+
+    return monkey_path_images
+
+
 def draw_shadow(surface, rect, radius=16, offset=(0, 6), alpha=110):
     """Draw a drop shadow"""
     s = pygame.Surface((rect.w + 20, rect.h + 20), pygame.SRCALPHA)
@@ -93,3 +122,89 @@ def calculate_button_size(image, target_width=None, target_height=None):
         return (orig_w, orig_h)
 
 
+def determine_footprint_direction(solution_path, current_index, maze_cols, maze_rows):
+    """
+    Determine the appropriate footprint image based on path analysis
+    Returns the key for the appropriate monkey path image
+    """
+    if not solution_path or current_index < 0 or current_index >= len(solution_path):
+        return 'left_to_right'  # fallback
+
+    current_pos = solution_path[current_index]
+    prev_pos = solution_path[current_index - 1] if current_index > 0 else None
+    next_pos = solution_path[current_index + 1] if current_index < len(solution_path) - 1 else None
+
+    # Get surrounding path positions for intersection detection
+    x, y = current_pos
+    adjacent_path_count = 0
+    directions = []
+
+    # Check all 4 directions for path connections
+    for dx, dy, direction in [(-1, 0, 'left'), (1, 0, 'right'), (0, -1, 'up'), (0, 1, 'down')]:
+        adj_x, adj_y = x + dx, y + dy
+        if (adj_x, adj_y) in solution_path:
+            adjacent_path_count += 1
+            directions.append(direction)
+
+    # Intersection detection (cross or fork)
+    if adjacent_path_count >= 3:
+        if adjacent_path_count == 4:
+            return 'cross_footprints'  # 4-way intersection
+        else:
+            return 'fork_footprints'    # 3-way fork
+
+    # Determine movement direction for straight paths and turns
+    if prev_pos and next_pos:
+        # Calculate movement vectors
+        prev_x, prev_y = prev_pos
+        next_x, next_y = next_pos
+
+        # Vector from previous to current
+        dx1, dy1 = x - prev_x, y - prev_y
+        # Vector from current to next
+        dx2, dy2 = next_x - x, next_y - y
+
+        # Check if it's a turn (direction change)
+        if (dx1, dy1) != (dx2, dy2):
+            # It's a turn - use turn_back for significant direction changes
+            if (dx1 == -dx2 and dy1 == -dy2):  # Complete reversal
+                return 'turn_back'
+            # For other turns, use the outgoing direction
+            if dx2 == 1:    # Moving right
+                return 'left_to_right'
+            elif dx2 == -1: # Moving left
+                return 'right_to_left'
+            elif dy2 == 1:  # Moving down
+                return 'top_to_bottom'
+            elif dy2 == -1: # Moving up
+                return 'bottom_to_top'
+
+        # Straight path - use the movement direction
+        if dx2 == 1:    # Moving right
+            return 'left_to_right'
+        elif dx2 == -1: # Moving left
+            return 'right_to_left'
+        elif dy2 == 1:  # Moving down
+            return 'top_to_bottom'
+        elif dy2 == -1: # Moving up
+            return 'bottom_to_top'
+
+    # Handle start/end points
+    if not prev_pos and next_pos:  # Start point
+        next_x, next_y = next_pos
+        dx, dy = next_x - x, next_y - y
+        if dx == 1:    return 'left_to_right'
+        elif dx == -1: return 'right_to_left'
+        elif dy == 1:  return 'top_to_bottom'
+        elif dy == -1: return 'bottom_to_top'
+
+    if prev_pos and not next_pos:  # End point
+        prev_x, prev_y = prev_pos
+        dx, dy = x - prev_x, y - prev_y
+        if dx == 1:    return 'left_to_right'
+        elif dx == -1: return 'right_to_left'
+        elif dy == 1:  return 'top_to_bottom'
+        elif dy == -1: return 'bottom_to_top'
+
+    # Default fallback
+    return 'left_to_right'

@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Model.__init__ import GenerationModel, SolvingModel
 from View.components import Button, Dropdown, ModalHistory, ModalVictory
 from View.sprites import FloatingBanana, MonkeyIdle
-from View.utils import load_image, draw_shadow, draw_glass_card, draw_smooth_rect, try_load_font, calculate_button_size
+from View.utils import load_image, draw_shadow, draw_glass_card, draw_smooth_rect, try_load_font, calculate_button_size, load_monkey_path_images, determine_footprint_direction
 from View.particle import ParticleSystem
 #from Controller import MazeController
 
@@ -250,7 +250,7 @@ class Dropdown:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Kiểm tra debounce chỉ cho các click liên tiếp nhanh
             if current_time - self.last_click_time < self.click_debounce:
-                return
+                return True  # Consume event to prevent propagation
 
             if self.open:
                 opt_h = self.rect.h
@@ -265,15 +265,20 @@ class Dropdown:
                             self.on_select(self.selected)
                     self.open = False
                     self.last_click_time = current_time
+                    return True  # Consume event to prevent propagation to buttons below
                 else:
                     # Click bên ngoài - đóng dropdown
                     self.open = False
                     self.last_click_time = current_time
+                    return True  # Consume event to prevent propagation
             else:
                 # Dropdown đã đóng - kiểm tra xem có click vào rect chính không
                 if self.rect.collidepoint(event.pos):
                     self.open = True
                     self.last_click_time = current_time
+                    return True  # Consume event to prevent propagation
+
+        return False  # Don't consume event if not handled
 
 class ModalHistory:
     def __init__(self, get_history):
@@ -333,8 +338,8 @@ class ModalVictory:
         overlay.fill((0,0,0,180))
         surface.blit(overlay, (0,0))
 
-        # Victory panel
-        w, h = 400, 280
+        # Victory panel - tăng chiều cao để có nhiều không gian hơn
+        w, h = 450, 320
         panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)
 
         # Golden victory theme
@@ -347,50 +352,51 @@ class ModalVictory:
         title_glow = font_header.render(title_text, True, (255,255,255))
 
         # Draw glow effect
-        glow_pos = (panel.centerx - title_glow.get_width()//2, panel.y + 30)
+        glow_pos = (panel.centerx - title_glow.get_width()//2, panel.y + 25)
         for offset_x in [-2, -1, 0, 1, 2]:
             for offset_y in [-2, -1, 0, 1, 2]:
                 if offset_x != 0 or offset_y != 0:
                     surface.blit(title_glow, (glow_pos[0] + offset_x, glow_pos[1] + offset_y))
 
         # Main title
-        title_pos = (panel.centerx - title.get_width()//2, panel.y + 30)
+        title_pos = (panel.centerx - title.get_width()//2, panel.y + 25)
         surface.blit(title, title_pos)
 
-        # Stats
-        y_pos = panel.y + 100
+        # Stats section with better spacing
+        y_pos = panel.y + 90
         stats_color = (101,67,33)
 
         time_text = f"Time: {self.time_str}"
         time_surface = font_ui.render(time_text, True, stats_color)
         surface.blit(time_surface, (panel.centerx - time_surface.get_width()//2, y_pos))
 
-        y_pos += 40
+        y_pos += 35
         steps_text = f"Steps: {self.steps}"
         steps_surface = font_ui.render(steps_text, True, stats_color)
         surface.blit(steps_surface, (panel.centerx - steps_surface.get_width()//2, y_pos))
 
-        # Restart button - giảm kích thước nhỏ hơn nữa
+        # Restart button - cải thiện kích thước và vị trí
         win_restart_img = getattr(self, 'win_restart_img', None)
         if self.restart_btn is None:
-            # Tính kích thước giữ nguyên tỷ lệ
+            # Tăng kích thước nút restart để dễ click và đẹp hơn
             if win_restart_img:
-                btn_size = calculate_button_size(win_restart_img, target_width=110)  # Giảm từ 130 xuống 110
+                btn_size = calculate_button_size(win_restart_img, target_width=140)  # Tăng từ 110 lên 140
                 btn_w, btn_h = btn_size
             else:
-                btn_w, btn_h = 110, 38
+                btn_w, btn_h = 140, 45  # Tăng kích thước fallback
 
+            # Đặt nút ở vị trí cân đối hơn, không quá sát đáy
             btn_x = panel.centerx - btn_w//2
-            btn_y = panel.y + h - btn_h - 15
+            btn_y = panel.y + h - btn_h - 25  # Tăng khoảng cách từ đáy từ 15 lên 25
 
             self.restart_btn = Button(
                 (btn_x, btn_y, btn_w, btn_h),
-                "",  # Xóa text
+                "",  # Thêm text rõ ràng hơn
                 font_ui,
                 self.handle_restart,
                 theme='green',
                 bg_image=win_restart_img,
-                keep_aspect=False
+                keep_aspect=True
             )
 
         self.restart_btn.draw(surface)
@@ -409,8 +415,86 @@ class ModalVictory:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.hide()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Check if click is outside the panel (close modal)
-            w, h = 400, 280
+            # Check if click is outside the panel (close modal) - cập nhật kích thước panel
+            w, h = 450, 320  # Cập nhật theo kích thước mới
+            screen_rect = pygame.display.get_surface().get_rect()
+            panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)
+            if not panel.collidepoint(event.pos):
+                self.hide()
+
+class ModalMessage:
+    def __init__(self):
+        self.visible = False
+        self.message = ""
+        self.title = ""
+        self.close_btn = None
+
+    def show(self, title, message):
+        self.visible = True
+        self.title = title
+        self.message = message
+
+    def hide(self):
+        self.visible = False
+
+    def draw(self, surface, screen_rect, font_header, font_ui):
+        if not self.visible: return
+
+        # Overlay
+        overlay = pygame.Surface(screen_rect.size, pygame.SRCALPHA)
+        overlay.fill((0,0,0,160))
+        surface.blit(overlay, (0,0))
+
+        # Message panel
+        w, h = 400, 200
+        panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)
+
+        # Orange warning theme
+        draw_shadow(surface, panel, radius=20, offset=(0,8), alpha=120)
+        draw_glass_card(surface, panel, radius=18, bg=(255,140,0,220), border=(255,165,0), border_alpha=100)
+
+        # Title
+        title_surface = font_header.render(self.title, True, (139,69,19))
+        title_pos = (panel.centerx - title_surface.get_width()//2, panel.y + 20)
+        surface.blit(title_surface, title_pos)
+
+        # Message
+        y_pos = panel.y + 70
+        lines = self.message.split('\n')
+        for line in lines:
+            if line.strip():
+                message_surface = font_ui.render(line, True, (101,67,33))
+                message_pos = (panel.centerx - message_surface.get_width()//2, y_pos)
+                surface.blit(message_surface, message_pos)
+                y_pos += 30
+
+        # Close button
+        if self.close_btn is None:
+            btn_w, btn_h = 80, 30
+            btn_x = panel.centerx - btn_w//2
+            btn_y = panel.y + h - btn_h - 15
+
+            self.close_btn = Button(
+                (btn_x, btn_y, btn_w, btn_h),
+                "OK",
+                font_ui,
+                self.hide,
+                theme='orange',
+                keep_aspect=False
+            )
+
+        self.close_btn.draw(surface)
+
+    def handle_event(self, event):
+        if not self.visible: return
+        if self.close_btn:
+            self.close_btn.handle_event(event)
+
+        # Close on ESC or click outside
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.hide()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            w, h = 400, 200
             screen_rect = pygame.display.get_surface().get_rect()
             panel = pygame.Rect((screen_rect.w-w)//2, (screen_rect.h-h)//2, w, h)
             if not panel.collidepoint(event.pos):
@@ -528,6 +612,10 @@ class App:
             if name.lower().endswith(".png"):
                 self.floor_tiles.append(load_image(os.path.join(tiles_dir, name)))
 
+        # monkey path images for states 4 and 5
+        self.monkey_path_images = load_monkey_path_images()
+        self.scaled_monkey_path_images = {}
+
         # phông chữ
         self.font_title = try_load_font(64)
         self.font_ui = try_load_font(26)
@@ -548,11 +636,22 @@ class App:
         self.modal_victory = ModalVictory(self.restart_level)
         self.modal_victory.win_restart_img = self.btn_assets['win_restart']
 
+        # Add message modal for warnings
+        self.modal_message = ModalMessage()
+
         # Maze generation animation
         self.generating_maze = False
         self.generation_model = None
         self.generation_timer = 0.0
         self.generation_speed = 0.03  # Seconds per step - tăng lên để chậm hơn, dễ quan sát hiệu ứng phá tường
+
+        # Auto-solving state
+        self.solving_in_progress = False
+        self.solver = None
+        self.solution_path = []
+        self.solution_index = 0
+        self.auto_solve_timer = 0.0
+        self.auto_solve_speed = 0.3  # Seconds per step for auto-solving
 
         # Particle effects for wall breaking
         self.particle_system = ParticleSystem()
@@ -742,6 +841,11 @@ class App:
 
         # Chia tỷ lệ trước ô tường
         self.scaled_wall_tile = self.get_scaled_image(self.tile_wall, (cell, cell))
+
+        # Scale monkey path images for states 4 and 5
+        self.scaled_monkey_path_images = {}
+        for direction, image in self.monkey_path_images.items():
+            self.scaled_monkey_path_images[direction] = self.get_scaled_image(image, (cell, cell))
 
         # khung hình chờ
         stand_dir = os.path.join(ASSETS, "monkey_stand")
@@ -1003,15 +1107,133 @@ class App:
 
     def reset_run(self):
         self.steps = 0; self.timer = 0.0; self.start_time = time.time()
-        self.paused = False; self.auto_on=False
+        self.paused = False; self.auto_on=False; self.game_won = False
         self.player= [1,1]
-        self.maze = self.MazeGenerated
+
+        # Create a fresh copy of the original maze to reset any modifications
+        # This ensures restart doesn't create a new maze, just resets the current one
+        self.maze = [[type('Node_Cell', (), {
+            'x': cell.x, 'y': cell.y, 'status': cell.status,
+            'visited': False, 'g_cost': cell.g_cost, 'h_cost': cell.h_cost,
+            'f_cost': cell.g_cost + cell.h_cost
+        })() for cell in row] for row in self.MazeGenerated]
+
+        # Reset any PATH_FOUND (4) or MOVED_PATH (5) states back to normal PATH (1)
+        for y in range(MAZE_ROWS):
+            for x in range(MAZE_COLS):
+                if self.maze[y][x].status in [4, 5]:  # PATH_FOUND or MOVED_PATH
+                    self.maze[y][x].status = 1  # Reset to normal PATH
+
+        # Reset auto-solving state
+        self.stop_auto_solving()
+
         self.prepare_sprites()
         self.modal_victory.hide()
+        self.modal_message.hide()  # Hide any active message modals
 
     def restart_level(self): self.reset_run()
     def toggle_play(self): self.paused = not self.paused
-    def toggle_auto(self): self.auto_on = not self.auto_on
+
+    def toggle_auto(self):
+        """Toggle auto-solve mode with algorithm validation"""
+        # Check if solving algorithm has been selected
+        if not self.selected_solving_algo:
+            # Show warning message if no algorithm selected
+            self.modal_message.show(
+                "Warning",
+                "Please select a solving algorithm\nfrom the dropdown menu first!"
+            )
+            return
+
+        # Toggle auto mode
+        self.auto_on = not self.auto_on
+
+        if self.auto_on:
+            # Start auto-solving
+            self.start_auto_solving()
+        else:
+            # Stop auto-solving
+            self.stop_auto_solving()
+
+    def start_auto_solving(self):
+        """Start the auto-solving process"""
+        try:
+            # Create solver instance
+            self.solver = SolvingModel(self.maze, MAZE_COLS, MAZE_ROWS)
+
+            # Find start and end positions
+            start_pos = None
+            end_pos = None
+
+            for y in range(MAZE_ROWS):
+                for x in range(MAZE_COLS):
+                    if self.maze[y][x].status == 2:  # Start
+                        start_pos = (x, y)
+                    elif self.maze[y][x].status == 3:  # End
+                        end_pos = (x, y)
+
+            if not start_pos or not end_pos:
+                # If no start/end found, show error
+                self.modal_message.show(
+                    "Error",
+                    "Cannot find start or end position\nin the maze!"
+                )
+                self.auto_on = False
+                return
+
+            # Set positions in solver
+            self.solver.start_pos = start_pos
+            self.solver.end_pos = end_pos
+
+            # Solve the maze
+            success = self.solver.solve_maze(self.selected_solving_algo)
+
+            if success and self.solver.solution_path:
+                # Store solution and start animation
+                self.solution_path = self.solver.solution_path[:]  # Copy the path
+                self.solution_index = 0
+                self.solving_in_progress = True
+                self.auto_solve_timer = 0.0
+
+                # Mark the solution path on the maze with state 4 (PATH_FOUND)
+                for x, y in self.solution_path:
+                    if self.maze[y][x].status == 1:  # Only mark normal path cells
+                        self.maze[y][x].status = 4  # PATH_FOUND
+
+                # Invalidate maze surface to show changes
+                self.invalidate_maze_surface()
+
+            else:
+                # No solution found
+                self.modal_message.show(
+                    "No Solution",
+                    f"No path found using {self.selected_solving_algo}\nalgorithm!"
+                )
+                self.auto_on = False
+
+        except Exception as e:
+            # Handle any errors during solving
+            self.modal_message.show(
+                "Error",
+                f"Error during solving:\n{str(e)}"
+            )
+            self.auto_on = False
+
+    def stop_auto_solving(self):
+        """Stop the auto-solving process and clean up"""
+        self.solving_in_progress = False
+        self.solution_path = []
+        self.solution_index = 0
+
+        # Reset all PATH_FOUND states back to normal paths
+        for y in range(MAZE_ROWS):
+            for x in range(MAZE_COLS):
+                if self.maze[y][x].status == 4:  # PATH_FOUND
+                    self.maze[y][x].status = 1  # Back to normal path
+
+        # Invalidate maze surface to show changes
+        self.invalidate_maze_surface()
+
     def set_algo(self, name): self.selected_solving_algo = name
     def set_generation_algo(self, name):
         """Thiết lập thuật toán sinh mê cung được chọn"""
@@ -1115,13 +1337,25 @@ class App:
             if self.state == "start": self.btn_start.handle_event(event)
             for b in (self.btn_close, self.btn_max, self.btn_min): b.handle_event(event)
             if self.state == "game":
+                # Xử lý modal message trước
+                if self.modal_message.visible:
+                    self.modal_message.handle_event(event)
                 # Xử lý modal victory trước
-                if self.modal_victory.visible:
+                elif self.modal_victory.visible:
                     self.modal_victory.handle_event(event)
                 else:
-                    for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate): b.handle_event(event)
-                    self.solving_dropdown.handle_event(event)
-                    self.maze_gen_dropdown.handle_event(event)
+                    # Handle dropdowns first to prevent event propagation to buttons below
+                    dropdown_consumed_event = False
+                    if self.solving_dropdown.handle_event(event):
+                        dropdown_consumed_event = True
+                    if not dropdown_consumed_event and self.maze_gen_dropdown.handle_event(event):
+                        dropdown_consumed_event = True
+
+                    # Only handle buttons if dropdown didn't consume the event
+                    if not dropdown_consumed_event:
+                        for b in (self.btn_restart, self.btn_play, self.btn_pause, self.btn_auto, self.btn_history, self.btn_back, self.btn_generate):
+                            b.handle_event(event)
+
                     if event.type == pygame.KEYDOWN and not self.paused:
                         if event.key in (pygame.K_LEFT, pygame.K_a): self.move(-1,0)
                         if event.key in (pygame.K_RIGHT, pygame.K_d): self.move(1,0)
@@ -1136,7 +1370,7 @@ class App:
         c, r = self.player; nc, nr = c+dx, r+dy
         if 0 <= nc < MAZE_COLS and 0 <= nr < MAZE_ROWS:
             # Cho phép di chuyển trên Path (1), Start (2), và End (3)
-            if self.maze[nr][nc].status in [1, 2, 3]:
+            if self.maze[nr][nc].status in [1, 2, 3, 4, 5]:
                 self.player=[nc,nr]; self.steps += 1
 
                 # Kiểm tra chiến thắng (chạm chuối ở vị trí thực tế)
@@ -1525,21 +1759,77 @@ class App:
                             text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
                             self.screen.blit(text, text_rect)
                     elif cell_status == 4:  # PATH_FOUND - Highlight found path
-                        # Create a semi-transparent blue overlay for found path
-                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                        overlay.fill((100, 150, 255, 120))  # Light blue with transparency
-                        self.screen.blit(overlay, (x, y))
-                        # Add a subtle border
-                        pygame.draw.rect(self.screen, (80, 120, 255), (x, y, cell, cell), 2)
+                        # Use appropriate monkey path image based on footprint type
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image based on movement direction
+                            self.screen.blit(self.scaled_monkey_path_images[footprint_type], (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'left_to_right' in self.scaled_monkey_path_images:
+                            # Fallback to left_to_right image for PATH_FOUND state
+                            self.screen.blit(self.scaled_monkey_path_images['left_to_right'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 150, 255, 120))  # Light blue with transparency
+                            self.screen.blit(overlay, (x, y))
+                            pygame.draw.rect(self.screen, (80, 120, 255), (x, y, cell, cell), 2)
                     elif cell_status == 5:  # MOVED_PATH - Show where player has moved
-                        # Create a semi-transparent green overlay for moved path
+                        # Use appropriate monkey path image based on footprint type for moved path
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with slight transparency to show it's been visited
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(180)  # Make it slightly transparent
+                            self.screen.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'right_to_left' in self.scaled_monkey_path_images:
+                            # Fallback to right_to_left image for MOVED_PATH state
+                            self.screen.blit(self.scaled_monkey_path_images['right_to_left'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                            self.screen.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 8)
+                            pygame.draw.circle(self.screen, (60, 200, 100),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 6:  # VISITED - Algorithm explored but not in solution
+                        # Use footprint based on algorithm type with more transparency
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with higher transparency for visited cells
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(120)  # More transparent than solution path
+                            self.screen.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'cross_footprints' in self.scaled_monkey_path_images:
+                            # Default to cross_footprints for visited cells
+                            visited_image = self.scaled_monkey_path_images['cross_footprints'].copy()
+                            visited_image.set_alpha(120)  # More transparent
+                            self.screen.blit(visited_image, (x, y))
+                        else:
+                            # Fallback to simple overlay
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((200, 150, 100, 80))  # Light brown with transparency for explored
+                            self.screen.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 10)
+                            pygame.draw.circle(self.screen, (180, 120, 60),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 7:  # CURRENT_PROCESSING - Currently being processed
+                        # Animated effect for current processing
                         overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                        overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                        # Pulsing effect - could be enhanced with time-based animation
+                        overlay.fill((255, 255, 0, 150))  # Bright yellow
                         self.screen.blit(overlay, (x, y))
-                        # Add small dots to show movement trail
-                        dot_size = max(2, cell // 8)
-                        pygame.draw.circle(self.screen, (60, 200, 100),
-                                         (x + cell//2, y + cell//2), dot_size)
+                        pygame.draw.rect(self.screen, (255, 200, 0), (x, y, cell, cell), 3)
+                        # Add "?" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("?", True, (255, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            self.screen.blit(text, text_rect)
 
         # draw player (monkey) - VẼ SAU walls và overlays để hiển thị trên cùng
         px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
@@ -1570,6 +1860,9 @@ class App:
 
         # victory modal
         self.modal_victory.draw(self.screen, self.window_rect, self.font_title, self.font_ui)
+
+        # message modal - vẽ cuối cùng để hiển thị trên cùng
+        self.modal_message.draw(self.screen, self.window_rect, self.font_ui, self.font_small)
 
     def get_cached_surface(self, key, creator_func):
         """Cache system for expensive surface operations"""
@@ -1712,21 +2005,323 @@ class App:
                             text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
                             maze_surface.blit(text, text_rect)
                     elif cell_status == 4:  # PATH_FOUND - Highlight found path
-                        # Create a semi-transparent blue overlay for found path
-                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                        overlay.fill((100, 150, 255, 120))  # Light blue with transparency
-                        maze_surface.blit(overlay, (x, y))
-                        # Add a subtle border
-                        pygame.draw.rect(maze_surface, (80, 120, 255), (x, y, cell, cell), 2)
+                        # Use appropriate monkey path image based on footprint type
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image based on movement direction
+                            maze_surface.blit(self.scaled_monkey_path_images[footprint_type], (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'left_to_right' in self.scaled_monkey_path_images:
+                            # Fallback to left_to_right image for PATH_FOUND state
+                            maze_surface.blit(self.scaled_monkey_path_images['left_to_right'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 150, 255, 120))  # Light blue with transparency
+                            maze_surface.blit(overlay, (x, y))
+                            pygame.draw.rect(maze_surface, (80, 120, 255), (x, y, cell, cell), 2)
                     elif cell_status == 5:  # MOVED_PATH - Show where player has moved
-                        # Create a semi-transparent green overlay for moved path
+                        # Use appropriate monkey path image based on footprint type for moved path
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with slight transparency to show it's been visited
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(180)  # Make it slightly transparent
+                            self.screen.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'right_to_left' in self.scaled_monkey_path_images:
+                            # Fallback to right_to_left image for MOVED_PATH state
+                            self.screen.blit(self.scaled_monkey_path_images['right_to_left'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                            self.screen.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 8)
+                            pygame.draw.circle(self.screen, (60, 200, 100),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 6:  # VISITED - Algorithm explored but not in solution
+                        # Use footprint based on algorithm type with more transparency
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with higher transparency for visited cells
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(120)  # More transparent than solution path
+                            self.screen.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'cross_footprints' in self.scaled_monkey_path_images:
+                            # Default to cross_footprints for visited cells
+                            visited_image = self.scaled_monkey_path_images['cross_footprints'].copy()
+                            visited_image.set_alpha(120)  # More transparent
+                            self.screen.blit(visited_image, (x, y))
+                        else:
+                            # Fallback to simple overlay
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((200, 150, 100, 80))  # Light brown with transparency for explored
+                            self.screen.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 10)
+                            pygame.draw.circle(self.screen, (180, 120, 60),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 7:  # CURRENT_PROCESSING - Currently being processed
+                        # Animated effect for current processing
                         overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-                        overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                        # Pulsing effect - could be enhanced with time-based animation
+                        overlay.fill((255, 255, 0, 150))  # Bright yellow
+                        self.screen.blit(overlay, (x, y))
+                        pygame.draw.rect(self.screen, (255, 200, 0), (x, y, cell, cell), 3)
+                        # Add "?" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("?", True, (255, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            self.screen.blit(text, text_rect)
+
+        # draw player (monkey) - VẼ SAU walls và overlays để hiển thị trên cùng
+        px = self.maze_rect.x + self.player[0] * cell + (cell - self.monkey_idle.current().get_width())//2
+        py = self.maze_rect.y + self.player[1] * cell + (cell - self.monkey_idle.current().get_height())//2
+        self.screen.blit(self.monkey_idle.current(), (px, py))
+
+        # draw banana goal - VẼ SAU walls và overlays để hiển thị trên cùng
+        gx = self.maze_rect.x + (MAZE_COLS - 2)*cell + (cell - self.banana.base_image.get_width())//2
+        gy = self.maze_rect.y + (MAZE_ROWS - 2)*cell + (cell - self.banana.base_image.get_height())//2
+
+        if self.skip_expensive_effects:
+            # Static banana without animation
+            self.screen.blit(self.banana.base_image, (gx, gy))
+        else:
+            # Animated floating banana
+            self.banana.draw(self.screen, (gx, gy))
+
+        # Draw particles (vẽ SAU maze và player để particles nằm trên cùng)
+        if self.generating_maze:
+            self.particle_system.draw(self.screen)
+
+        # window buttons - vẽ cuối cùng để đảm bảo không bị đè
+        for b in (self.btn_min, self.btn_max, self.btn_close):
+            b.draw(self.screen)
+
+        # history modal
+        self.modal_history.draw(self.screen, self.window_rect, self.font_ui, self.font_small)
+
+        # victory modal
+        self.modal_victory.draw(self.screen, self.window_rect, self.font_title, self.font_ui)
+
+        # message modal - vẽ cuối cùng để hiển thị trên cùng
+        self.modal_message.draw(self.screen, self.window_rect, self.font_ui, self.font_small)
+
+    def get_cached_surface(self, key, creator_func):
+        """Cache system for expensive surface operations"""
+        if key not in self._surface_cache:
+            self._surface_cache[key] = creator_func()
+        return self._surface_cache[key]
+
+    def clear_size_dependent_cache(self):
+        """Clear cache when window size changes"""
+        self._image_cache.clear()
+        self._surface_cache.clear()
+        self._bg_cache.clear()
+
+    def get_scaled_image(self, image, size):
+        """Cache scaled images to avoid repeated scaling"""
+        cache_key = (id(image), size)
+        if cache_key not in self._image_cache:
+            self._image_cache[cache_key] = pygame.transform.smoothscale(image, size)
+        return self._image_cache[cache_key]
+
+    def get_scaled_background(self, image, size):
+        """Cache scaled backgrounds"""
+        cache_key = (id(image), size)
+        if cache_key not in self._bg_cache:
+            self._bg_cache[cache_key] = pygame.transform.smoothscale(image, size)
+        return self._bg_cache[cache_key]
+
+    # ---- Performance optimization methods
+    def update_performance_mode(self):
+        """Monitor FPS and automatically enable performance optimizations when needed"""
+        current_time = time.time()
+
+        # Calculate current FPS
+        if hasattr(self, 'last_frame_time'):
+            frame_time = current_time - self.last_frame_time
+            if frame_time > 0:
+                fps = 1.0 / frame_time
+                self.fps_samples.append(fps)
+
+                # Keep only last 30 samples for rolling average
+                if len(self.fps_samples) > 30:
+                    self.fps_samples.pop(0)
+
+                avg_fps = sum(self.fps_samples) / len(self.fps_samples)
+
+                # Enable performance mode if FPS drops below threshold
+                if avg_fps < MIN_FPS_THRESHOLD and not self.performance_mode:
+                    self.performance_mode = True
+                    self.current_fps = PERFORMANCE_FPS
+
+                # Disable performance mode if FPS is stable above threshold
+                elif avg_fps > MIN_FPS_THRESHOLD + 10 and self.performance_mode:
+                    self.performance_mode = False
+                    self.current_fps = FPS
+
+        self.last_frame_time = current_time
+
+        # Enable additional optimizations for very small windows
+        window_area = self.window_rect.w * self.window_rect.h
+        small_window_threshold = 800 * 600  # Small window threshold
+
+        self.skip_expensive_effects = (
+            self.performance_mode or
+            window_area < small_window_threshold or
+            self.cell_size < MIN_CELL_SIZE_FOR_DETAILS
+        )
+
+    def should_skip_frame(self):
+        """Determine if we should skip this frame for performance"""
+        if not self.performance_mode:
+            return False
+
+        self.frame_skip_counter += 1
+        # Skip every 2nd frame in performance mode
+        if self.frame_skip_counter >= 2:
+            self.frame_skip_counter = 0
+            return False
+        return True
+
+    def get_optimized_maze_surface(self):
+        """Create a pre-rendered maze surface for better performance"""
+        if self._maze_surface is None or self._maze_surface_dirty:
+            # Create surface for the entire maze
+            maze_surface = pygame.Surface(self.maze_rect.size)
+
+            cell = self.cell_size
+
+            # Draw floor tiles
+            for r in range(MAZE_ROWS):
+                for c in range(MAZE_COLS):
+                    x = c * cell
+                    y = r * cell
+                    idx = self.floor_map[r][c]
+                    maze_surface.blit(self.scaled_floor_tiles[idx], (x, y))
+
+            # Draw walls
+            for r in range(MAZE_ROWS):
+                for c in range(MAZE_COLS):
+                    if self.maze[r][c].status == 0:
+                        x = c * cell
+                        y = r * cell
+                        maze_surface.blit(self.scaled_wall_tile, (x, y))
+
+            # Draw special state overlays for all states - optimized version
+            for r in range(MAZE_ROWS):
+                for c in range(MAZE_COLS):
+                    cell_status = self.maze[r][c].status
+                    x = c * cell
+                    y = r * cell
+
+                    if cell_status == 1:  # PATH - Normal walkable path
+                        # No special overlay, just the floor tile
+                        pass
+                    elif cell_status == 2:  # START - Starting position
+                        # Green overlay for start position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((100, 255, 100, 150))  # Light green with transparency
                         maze_surface.blit(overlay, (x, y))
-                        # Add small dots to show movement trail
-                        dot_size = max(2, cell // 8)
-                        pygame.draw.circle(maze_surface, (60, 200, 100),
-                                         (x + cell//2, y + cell//2), dot_size)
+                        # Add border
+                        pygame.draw.rect(maze_surface, (50, 200, 50), (x, y, cell, cell), 3)
+                        # Add "S" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("S", True, (0, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            maze_surface.blit(text, text_rect)
+                    elif cell_status == 3:  # END - Goal position
+                        # Gold/yellow overlay for end position
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        overlay.fill((255, 215, 0, 150))  # Gold with transparency
+                        maze_surface.blit(overlay, (x, y))
+                        # Add border
+                        pygame.draw.rect(maze_surface, (255, 165, 0), (x, y, cell, cell), 3)
+                        # Add "E" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("E", True, (139, 69, 19))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            maze_surface.blit(text, text_rect)
+                    elif cell_status == 4:  # PATH_FOUND - Highlight found path
+                        # Use appropriate monkey path image based on footprint type
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image based on movement direction
+                            maze_surface.blit(self.scaled_monkey_path_images[footprint_type], (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'left_to_right' in self.scaled_monkey_path_images:
+                            # Fallback to left_to_right image for PATH_FOUND state
+                            maze_surface.blit(self.scaled_monkey_path_images['left_to_right'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 150, 255, 120))  # Light blue with transparency
+                            maze_surface.blit(overlay, (x, y))
+                            pygame.draw.rect(maze_surface, (80, 120, 255), (x, y, cell, cell), 2)
+                    elif cell_status == 5:  # MOVED_PATH - Show where player has moved
+                        # Use appropriate monkey path image based on footprint type for moved path
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with slight transparency to show it's been visited
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(180)  # Make it slightly transparent
+                            maze_surface.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'right_to_left' in self.scaled_monkey_path_images:
+                            # Fallback to right_to_left image for MOVED_PATH state
+                            maze_surface.blit(self.scaled_monkey_path_images['right_to_left'], (x, y))
+                        else:
+                            # Fallback to original overlay if images not available
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((100, 255, 150, 100))  # Light green with transparency
+                            maze_surface.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 8)
+                            pygame.draw.circle(maze_surface, (60, 200, 100),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 6:  # VISITED - Algorithm explored but not in solution
+                        # Use footprint based on algorithm type with more transparency
+                        footprint_type = self.maze[r][c].get_footprint_type() if hasattr(self.maze[r][c], 'get_footprint_type') else None
+
+                        if footprint_type and hasattr(self, 'scaled_monkey_path_images') and footprint_type in self.scaled_monkey_path_images:
+                            # Use the correct footprint image with higher transparency for visited cells
+                            footprint_image = self.scaled_monkey_path_images[footprint_type].copy()
+                            footprint_image.set_alpha(120)  # More transparent than solution path
+                            maze_surface.blit(footprint_image, (x, y))
+                        elif hasattr(self, 'scaled_monkey_path_images') and 'cross_footprints' in self.scaled_monkey_path_images:
+                            # Default to cross_footprints for visited cells
+                            visited_image = self.scaled_monkey_path_images['cross_footprints'].copy()
+                            visited_image.set_alpha(120)  # More transparent
+                            maze_surface.blit(visited_image, (x, y))
+                        else:
+                            # Fallback to simple overlay
+                            overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                            overlay.fill((200, 150, 100, 80))  # Light brown with transparency for explored
+                            maze_surface.blit(overlay, (x, y))
+                            dot_size = max(2, cell // 10)
+                            pygame.draw.circle(maze_surface, (180, 120, 60),
+                                             (x + cell//2, y + cell//2), dot_size)
+                    elif cell_status == 7:  # CURRENT_PROCESSING - Currently being processed
+                        # Animated effect for current processing
+                        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+                        # Pulsing effect - could be enhanced with time-based animation
+                        overlay.fill((255, 255, 0, 150))  # Bright yellow
+                        maze_surface.blit(overlay, (x, y))
+                        pygame.draw.rect(maze_surface, (255, 200, 0), (x, y, cell, cell), 3)
+                        # Add "?" text if cell is large enough
+                        if cell >= 20:
+                            font_size = max(12, cell // 3)
+                            font = pygame.font.Font(None, font_size)
+                            text = font.render("?", True, (255, 100, 0))
+                            text_rect = text.get_rect(center=(x + cell//2, y + cell//2))
+                            maze_surface.blit(text, text_rect)
 
             self._maze_surface = maze_surface
             self._maze_surface_dirty = False

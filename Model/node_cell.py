@@ -7,6 +7,7 @@ class Node_Cell:
         self.g_cost = g_cost
         self.h_cost = h_cost
         self.f_cost = g_cost + h_cost
+        self.footprint_type = None  # Loại footprint cho rendering
 
     def get_position(self):
         return (self.x, self.y)
@@ -25,3 +26,11 @@ class Node_Cell:
 
     def get_f_cost(self):
         return self.f_cost
+
+    def set_footprint_type(self, footprint_type):
+        """Đặt loại footprint cho cell này"""
+        self.footprint_type = footprint_type
+
+    def get_footprint_type(self):
+        """Lấy loại footprint của cell này"""
+        return self.footprint_type
