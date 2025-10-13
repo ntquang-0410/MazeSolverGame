@@ -82,13 +82,6 @@ class GameController:
                 for x in range(self.maze_cols):
                     if self.maze[y][x]:
                         self.maze[y][x].set_footprint_type(None)
-
-    def start_game(self):
-        """Start the game"""
-        self.state = "game"
-        self.reset_game()
-    
-    def restart_level(self):
         """Restart current level"""
         self.reset_game()
     
